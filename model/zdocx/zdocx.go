@@ -1,8 +1,6 @@
 package zdocx
 
 import (
-	"archive/zip"
-	"os"
 
 	// "io/ioutil"
 	"bytes"
@@ -37,6 +35,7 @@ type Document struct {
 	Header          []*Paragraph
 	Footer          []*Paragraph
 	PageOrientation string
+	Lang            string
 	Margin          *Margin
 	FontSize        int
 	Images          []*Image
@@ -148,11 +147,11 @@ func templatesFilesList() []*templateFile {
 			SavePath: "docProps",
 			Bytes:    []byte(templateDocPropsApp),
 		},
-		{
-			Name:     "core.xml",
-			SavePath: "docProps",
-			Bytes:    []byte(templateDocPropsCore),
-		},
+		// {
+		// 	Name:     "core.xml",
+		// 	SavePath: "docProps",
+		// 	Bytes:    []byte(templateDocPropsCore),
+		// },
 		{
 			Name:     "[Content_Types].xml",
 			SavePath: "",
@@ -395,75 +394,6 @@ func (s *Style) IsEmpty() bool {
 	return true
 }
 
-type zipFilesArgs struct {
-	FileName       string
-	TemplatesFiles []*templateFile
-	Document       *Document
-}
-
-func (args *zipFilesArgs) Error() error {
-	if args.Document == nil {
-		return errors.New("no args.Documnet")
-	}
-
-	if args.FileName == "" {
-		return errors.New("no args.FileName")
-	}
-
-	return nil
-}
-
-func zipFiles(args zipFilesArgs) error {
-	if err := args.Error(); err != nil {
-		return err
-	}
-
-	newZip, err := os.Create(args.FileName)
-	if err != nil {
-		return err
-	}
-
-	defer newZip.Close()
-
-	writer := zip.NewWriter(newZip)
-	defer writer.Close()
-
-	if err := setContent(setContentArgs{
-		Document: args.Document,
-		Writer:   writer,
-	}); err != nil {
-		return errors.Wrap(err, "setContent")
-	}
-
-	if err := setHeaderAndFooter(setHeaderAndFooterArgs{
-		Document: args.Document,
-		Writer:   writer,
-	}); err != nil {
-		return errors.Wrap(err, "setHeaderAndFooter")
-	}
-
-	if err := setWordRels(setWordRelsArgs{
-		Document: args.Document,
-		Writer:   writer,
-	}); err != nil {
-		return errors.Wrap(err, "setWrodRels")
-	}
-
-	for _, file := range args.TemplatesFiles {
-		newFile, err := writer.Create(file.FullName())
-		if err != nil {
-			return errors.Wrap(err, "writer.Create")
-		}
-
-		_, err = newFile.Write(file.Bytes)
-		if err != nil {
-			return errors.Wrap(err, "contentFile.Write")
-		}
-	}
-
-	return nil
-}
-
 func (d *Document) SetSectionProperties() {
 	d.Buf.WriteString("<w:sectPr>")
 
@@ -507,147 +437,6 @@ func (d *Document) SetMargins() {
 	}
 
 	d.Buf.WriteString(`<w:pgMar w:left="` + strconv.Itoa(d.Margin.Left) + `" w:right="` + strconv.Itoa(d.Margin.Right) + `" w:header="` + strconv.Itoa(d.Margin.Top) + `" w:top="2229" w:footer="` + strconv.Itoa(d.Margin.Bottom) + `" w:bottom="2229" w:gutter="0"/>`)
-}
-
-type setWordRelsArgs struct {
-	Document *Document
-	Writer   *zip.Writer
-}
-
-func setWordRels(args setWordRelsArgs) error {
-	file, err := args.Writer.Create("word/_rels.xml")
-	if err != nil {
-		return errors.Wrap(err, "writer.Create")
-	}
-
-	var buf bytes.Buffer
-	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
-	buf.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(StylesID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
-
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(NumberingID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(FontTableID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(SettingsID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(ThemeID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
-
-	if len(args.Document.Images) != 0 {
-		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(ImagesID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`)
-	}
-
-	if len(args.Document.Header) > 0 {
-		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(HeaderID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
-	}
-
-	if len(args.Document.Footer) > 0 {
-		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(FooterID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
-	}
-
-	buf.WriteString(`</Relationships>`)
-
-	_, err = file.Write(buf.Bytes())
-	if err != nil {
-		return errors.Wrap(err, "file.Write")
-	}
-
-	return nil
-}
-
-type setContentArgs struct {
-	Document *Document
-	Writer   *zip.Writer
-}
-
-func setContent(args setContentArgs) error {
-	contentFile, err := args.Writer.Create("word/document.xml")
-	if err != nil {
-		return errors.Wrap(err, "writer.Create")
-	}
-
-	_, err = contentFile.Write(args.Document.Buf.Bytes())
-	if err != nil {
-		return errors.Wrap(err, "contentFile.Write")
-	}
-
-	return nil
-}
-
-type setHeaderAndFooterArgs struct {
-	Document *Document
-	Writer   *zip.Writer
-}
-
-func setHeaderAndFooter(args setHeaderAndFooterArgs) error {
-	if err := setHeaderOrFooter(setHeaderOrFooterArgs{
-		Document: args.Document,
-		Writer:   args.Writer,
-		Tag:      "hdr",
-		FileName: "header",
-	}); err != nil {
-		return errors.Wrap(err, "setHeaderOrFooter")
-	}
-
-	if err := setHeaderOrFooter(setHeaderOrFooterArgs{
-		Document: args.Document,
-		Writer:   args.Writer,
-		Tag:      "ftr",
-		FileName: "footer",
-	}); err != nil {
-		return errors.Wrap(err, "setHeaderOrFooter")
-	}
-
-	return nil
-}
-
-type setHeaderOrFooterArgs struct {
-	Document *Document
-	Writer   *zip.Writer
-	Tag      string
-	FileName string
-}
-
-func (args *setHeaderOrFooterArgs) Error() error {
-	if args.Tag == "" {
-		return errors.New("no args.Tag")
-	}
-
-	if args.FileName == "" {
-		return errors.New("no args.FileName")
-	}
-
-	return nil
-}
-
-func setHeaderOrFooter(args setHeaderOrFooterArgs) error {
-	if err := args.Error(); err != nil {
-		return err
-	}
-
-	if len(args.Document.Header) == 0 {
-		return nil
-	}
-
-	var buf bytes.Buffer
-
-	buf.WriteString(getDocumentStartTags("hdr"))
-
-	for _, p := range args.Document.Header {
-		p.StyleClass = args.FileName + "Class"
-		buf.WriteString(p.String())
-	}
-
-	buf.WriteString("</w:hdr>")
-
-	contentFile, err := args.Writer.Create("word/" + args.FileName + "`.xml")
-	if err != nil {
-		return errors.Wrap(err, "writer.Create")
-	}
-
-	_, err = contentFile.Write(buf.Bytes())
-	if err != nil {
-		return errors.Wrap(err, "contentFile.Write")
-	}
-
-	return nil
 }
 
 func (d *Document) SetList(list *List) error {
@@ -1036,37 +825,3 @@ func (d *Document) SetTable(table *Table) error {
 
 	return nil
 }
-
-// func addTemplateFileToZip(zipWriter *zip.Writer, fileData *templateFile) error {
-// 	file, err := os.Open(fileData. + "/" + fileData.Name)
-// 	if err != nil {
-// 		return errors.Wrap(err, "os.Opern")
-// 	}
-
-// 	defer file.Close()
-
-// 	info, err := file.Stat()
-// 	if err != nil {
-// 		return errors.Wrap(err, "file.Stat")
-// 	}
-
-// 	header, err := zip.FileInfoHeader(info)
-// 	if err != nil {
-// 		return errors.Wrap(err, "zip.FileInfoHeader")
-// 	}
-
-// 	header.Name = fileData.FullName()
-// 	header.Method = zip.Deflate
-
-// 	writer, err := zipWriter.CreateHeader(header)
-// 	if err != nil {
-// 		return errors.Wrap(err, "zipWriter.CreateHeader")
-// 	}
-
-// 	_, err = io.Copy(writer, file)
-// 	if err != nil {
-// 		return errors.Wrap(err, "io.Copy")
-// 	}
-
-// 	return nil
-// }
