@@ -4,12 +4,23 @@ import "zdocx/model/zdocx"
 
 func main() {
 	doc := zdocx.NewDocument()
+	doc.PageOrientation = zdocx.PageOrientationAlbum
 
 	doc.Header = []*zdocx.Paragraph{
 		{
 			Texts: []*zdocx.Text{
 				{
-					Text: "header",
+					Text: "header text",
+				},
+			},
+		},
+	}
+
+	doc.Footer = []*zdocx.Paragraph{
+		{
+			Texts: []*zdocx.Text{
+				{
+					Text: "footer text",
 				},
 			},
 		},

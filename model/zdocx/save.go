@@ -38,38 +38,41 @@ type writeHeaderAndFooterFileArgs struct {
 
 func writeHeaderAndFooterFile(args writeHeaderAndFooterFileArgs) error {
 	if len(args.Document.Header) > 0 {
-		if err := setHeaderOrFooter(setHeaderOrFooterArgs{
+		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
 			Document: args.Document,
+			P:        args.Document.Header,
 			Writer:   args.Writer,
 			Tag:      "hdr",
 			FileName: "header",
 		}); err != nil {
-			return errors.Wrap(err, "setHeaderOrFooter")
+			return errors.Wrap(err, "writeHeaderOrFooter")
 		}
 	}
 
 	if len(args.Document.Footer) > 0 {
-		if err := setHeaderOrFooter(setHeaderOrFooterArgs{
+		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
 			Document: args.Document,
+			P:        args.Document.Footer,
 			Writer:   args.Writer,
 			Tag:      "ftr",
 			FileName: "footer",
 		}); err != nil {
-			return errors.Wrap(err, "setHeaderOrFooter")
+			return errors.Wrap(err, "writeHeaderOrFooter")
 		}
 	}
 
 	return nil
 }
 
-type setHeaderOrFooterArgs struct {
+type writeHeaderOrFooterArgs struct {
 	Document *Document
+	P        []*Paragraph
 	Writer   *zip.Writer
 	Tag      string
 	FileName string
 }
 
-func (args *setHeaderOrFooterArgs) Error() error {
+func (args *writeHeaderOrFooterArgs) Error() error {
 	if args.Tag == "" {
 		return errors.New("no args.Tag")
 	}
@@ -81,21 +84,25 @@ func (args *setHeaderOrFooterArgs) Error() error {
 	return nil
 }
 
-func setHeaderOrFooter(args setHeaderOrFooterArgs) error {
+func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 	if err := args.Error(); err != nil {
 		return err
 	}
 
+	if len(args.P) == 0 {
+		return nil
+	}
+
 	var buf bytes.Buffer
 
-	buf.WriteString(getDocumentStartTags("hdr"))
+	buf.WriteString(getDocumentStartTags(args.Tag))
 
-	for _, p := range args.Document.Header {
+	for _, p := range args.P {
 		p.StyleClass = args.FileName + "Class"
 		buf.WriteString(p.String(args.Document))
 	}
 
-	buf.WriteString("</w:hdr>")
+	buf.WriteString("</w:" + args.Tag + ">")
 
 	contentFile, err := args.Writer.Create("word/" + args.FileName + "1.xml")
 	if err != nil {

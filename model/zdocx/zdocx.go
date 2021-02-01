@@ -1,8 +1,6 @@
 package zdocx
 
 import (
-
-	// "io/ioutil"
 	"bytes"
 	"strconv"
 
