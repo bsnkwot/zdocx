@@ -50,6 +50,11 @@ type Link struct {
 type Image struct {
 	FileName    string
 	ContentType string
+	Description string
+	RelsID      string
+	Width       int
+	Height      int
+	ID          int
 }
 
 type SectionProperties struct {
@@ -142,8 +147,8 @@ func (d *Document) Save(args SaveArgs) error {
 	}
 
 	if err := zipFiles(zipFilesArgs{
-		FileName: "test.docx",
-		Document: d,
+		fileName: "test.docx",
+		document: d,
 	}); err != nil {
 		return errors.Wrap(err, "ZipFiles")
 	}
@@ -433,9 +438,9 @@ func (d *Document) SetList(list *List) error {
 	var infinityLoopCnt int
 
 	if err := d.writeList(writeListArgs{
-		List:            list,
-		Level:           0,
-		InfinityLoopCnt: &infinityLoopCnt,
+		list:            list,
+		level:           0,
+		infinityLoopCnt: &infinityLoopCnt,
 	}); err != nil {
 		return errors.Wrap(err, "d.writeList")
 	}
@@ -444,40 +449,40 @@ func (d *Document) SetList(list *List) error {
 }
 
 type writeListArgs struct {
-	List            *List
-	Level           int
-	InfinityLoopCnt *int
+	list            *List
+	level           int
+	infinityLoopCnt *int
 }
 
 func (d *Document) writeList(args writeListArgs) error {
-	if *args.InfinityLoopCnt >= 1000 {
+	if *args.infinityLoopCnt >= 1000 {
 		return errors.New("infinity loop")
 	}
 
-	*args.InfinityLoopCnt++
+	*args.infinityLoopCnt++
 
-	if args.List.LI == nil {
+	if args.list.LI == nil {
 		return nil
 	}
 
-	for _, li := range args.List.LI {
+	for _, li := range args.list.LI {
 		for index, i := range li.Items {
 			switch i.(type) {
 			case *Paragraph:
 				if err := d.writeListP(writeListPArgs{
-					Index:    index,
-					ListType: ListBulletType,
-					Level:    args.Level,
-					Item:     i,
+					index:    index,
+					listType: ListBulletType,
+					level:    args.level,
+					item:     i,
 				}); err != nil {
 					return errors.Wrap(err, "d.writeListP")
 				}
 			case *List:
 				if err := d.writeListInList(writeListInListArgs{
-					Item:            i,
-					Level:           args.Level + 1,
-					InfinityLoopCnt: args.InfinityLoopCnt,
-					Type:            ListBulletType,
+					item:            i,
+					level:           args.level + 1,
+					infinityLoopCnt: args.infinityLoopCnt,
+					listType:        ListBulletType,
 				}); err != nil {
 					return errors.Wrap(err, "setListInList")
 				}
@@ -491,24 +496,24 @@ func (d *Document) writeList(args writeListArgs) error {
 }
 
 type writeListInListArgs struct {
-	Item            interface{}
-	Level           int
-	InfinityLoopCnt *int
-	Type            string
+	item            interface{}
+	level           int
+	infinityLoopCnt *int
+	listType        string
 }
 
 func (d *Document) writeListInList(args writeListInListArgs) error {
-	list, ok := args.Item.(*List)
+	list, ok := args.item.(*List)
 	if !ok {
 		return errors.New("can't convert to List")
 	}
 
-	list.Type = args.Type
+	list.Type = args.listType
 
 	err := d.writeList(writeListArgs{
-		List:            list,
-		Level:           args.Level,
-		InfinityLoopCnt: args.InfinityLoopCnt,
+		list:            list,
+		level:           args.level,
+		infinityLoopCnt: args.infinityLoopCnt,
 	})
 	if err != nil {
 		return errors.Wrap(err, "writeList")
@@ -518,29 +523,29 @@ func (d *Document) writeListInList(args writeListInListArgs) error {
 }
 
 type writeListPArgs struct {
-	Item     interface{}
-	Index    int
-	ListType string
-	Level    int
+	item     interface{}
+	index    int
+	listType string
+	level    int
 }
 
 func (d *Document) writeListP(args writeListPArgs) error {
-	item, ok := args.Item.(*Paragraph)
+	item, ok := args.item.(*Paragraph)
 	if !ok {
 		return errors.New("can't convert to Paragraph")
 	}
 
-	if args.Index == 0 {
-		if args.ListType == "" {
-			args.ListType = ListBulletType
+	if args.index == 0 {
+		if args.listType == "" {
+			args.listType = ListBulletType
 		}
 
 		item.ListParams = &ListParams{
-			Level: args.Level,
-			Type:  args.ListType,
+			Level: args.level,
+			Type:  args.listType,
 		}
 	} else {
-		item.Style.MarginLeft = 720 * (args.Level + 1)
+		item.Style.MarginLeft = 720 * (args.level + 1)
 	}
 
 	d.writeP(item)
@@ -588,9 +593,9 @@ func (d *Document) writeContentFromInterface(content interface{}) error {
 
 		var infinityLoopCnt int
 		if err := d.writeList(writeListArgs{
-			List:            list,
-			Level:           0,
-			InfinityLoopCnt: &infinityLoopCnt,
+			list:            list,
+			level:           0,
+			infinityLoopCnt: &infinityLoopCnt,
 		}); err != nil {
 			return errors.Wrap(err, "d.writeList")
 		}
@@ -724,4 +729,37 @@ func (d *Document) SetTable(table *Table) error {
 	}
 
 	return nil
+}
+
+func (d *Document) SetImage(pic *Image) {
+	d.writeImage(pic)
+}
+
+func (d *Document) writeImage(img *Image) {
+	id := len(d.Images)
+	d.Buf.WriteString(`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
+	d.Buf.WriteString(`<pic:nvPicPr>`)
+	d.Buf.WriteString(`<pic:cNvPr id="` + strconv.Itoa(id) + `" name="` + img.FileName + `"/>`)
+	d.Buf.WriteString(`<pic:cNvPicPr/>`)
+	d.Buf.WriteString(`</pic:nvPicPr>`)
+	d.Buf.WriteString(`<pic:blipFill>`)
+	d.Buf.WriteString(`<a:blip r:embed="` + img.RelsID + `" cstate="print"/>`)
+	d.Buf.WriteString(`<a:stretch>`)
+	d.Buf.WriteString(`<a:fillRect/>`)
+	d.Buf.WriteString(`</a:stretch/>`)
+	d.Buf.WriteString(`</pic:blipFill>`)
+	d.Buf.WriteString(`<pic:spPr>`)
+	d.Buf.WriteString(`<a:xfrm>`)
+	d.Buf.WriteString(`<a:off x="0" y="0"/>`)
+	d.Buf.WriteString(`<a:ext cx="` + strconv.Itoa(getSizeInPoints(img.Width)) + `" cy="` + strconv.Itoa(getSizeInPoints(img.Height)) + `"/>`)
+	d.Buf.WriteString(`</a:xfrm>`)
+	d.Buf.WriteString(`<a:prstGeom rst="rect>`)
+	d.Buf.WriteString(`<a:avLst/>`)
+	d.Buf.WriteString(`</a:prstGeom>`)
+	d.Buf.WriteString(`</pic:spPr>`)
+	d.Buf.WriteString(`</pic:pic>`)
+}
+
+func getSizeInPoints(val int) int {
+	return val
 }

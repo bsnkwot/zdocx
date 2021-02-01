@@ -10,19 +10,19 @@ import (
 )
 
 type writeContentFileArgs struct {
-	Document *Document
-	Writer   *zip.Writer
+	document *Document
+	writer   *zip.Writer
 }
 
 func writeContentFile(args writeContentFileArgs) error {
-	contentFile, err := args.Writer.Create("word/document.xml")
+	contentFile, err := args.writer.Create("word/document.xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
 
-	args.Document.writeBodyClose()
+	args.document.writeBodyClose()
 
-	_, err = contentFile.Write(args.Document.Buf.Bytes())
+	_, err = contentFile.Write(args.document.Buf.Bytes())
 	if err != nil {
 		return errors.Wrap(err, "contentFile.Write")
 	}
@@ -31,30 +31,30 @@ func writeContentFile(args writeContentFileArgs) error {
 }
 
 type writeHeaderAndFooterFileArgs struct {
-	Document *Document
-	Writer   *zip.Writer
+	document *Document
+	writer   *zip.Writer
 }
 
 func writeHeaderAndFooterFile(args writeHeaderAndFooterFileArgs) error {
-	if len(args.Document.Header) > 0 {
+	if len(args.document.Header) > 0 {
 		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
-			Document: args.Document,
-			P:        args.Document.Header,
-			Writer:   args.Writer,
-			Tag:      "hdr",
-			FileName: "header",
+			document: args.document,
+			p:        args.document.Header,
+			writer:   args.writer,
+			tag:      "hdr",
+			fileName: "header",
 		}); err != nil {
 			return errors.Wrap(err, "writeHeaderOrFooter")
 		}
 	}
 
-	if len(args.Document.Footer) > 0 {
+	if len(args.document.Footer) > 0 {
 		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
-			Document: args.Document,
-			P:        args.Document.Footer,
-			Writer:   args.Writer,
-			Tag:      "ftr",
-			FileName: "footer",
+			document: args.document,
+			p:        args.document.Footer,
+			writer:   args.writer,
+			tag:      "ftr",
+			fileName: "footer",
 		}); err != nil {
 			return errors.Wrap(err, "writeHeaderOrFooter")
 		}
@@ -64,19 +64,19 @@ func writeHeaderAndFooterFile(args writeHeaderAndFooterFileArgs) error {
 }
 
 type writeHeaderOrFooterArgs struct {
-	Document *Document
-	P        []*Paragraph
-	Writer   *zip.Writer
-	Tag      string
-	FileName string
+	document *Document
+	p        []*Paragraph
+	writer   *zip.Writer
+	tag      string
+	fileName string
 }
 
 func (args *writeHeaderOrFooterArgs) Error() error {
-	if args.Tag == "" {
+	if args.tag == "" {
 		return errors.New("no args.Tag")
 	}
 
-	if args.FileName == "" {
+	if args.fileName == "" {
 		return errors.New("no args.FileName")
 	}
 
@@ -88,22 +88,22 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 		return err
 	}
 
-	if len(args.P) == 0 {
+	if len(args.p) == 0 {
 		return nil
 	}
 
 	var buf bytes.Buffer
 
-	buf.WriteString(getDocumentStartTags(args.Tag))
+	buf.WriteString(getDocumentStartTags(args.tag))
 
-	for _, p := range args.P {
-		p.StyleClass = args.FileName + "Class"
-		buf.WriteString(p.String(args.Document))
+	for _, p := range args.p {
+		p.StyleClass = args.fileName + "Class"
+		buf.WriteString(p.String(args.document))
 	}
 
-	buf.WriteString("</w:" + args.Tag + ">")
+	buf.WriteString("</w:" + args.tag + ">")
 
-	contentFile, err := args.Writer.Create("word/" + args.FileName + "1.xml")
+	contentFile, err := args.writer.Create("word/" + args.fileName + "1.xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
@@ -117,16 +117,16 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 }
 
 type zipFilesArgs struct {
-	FileName string
-	Document *Document
+	fileName string
+	document *Document
 }
 
 func (args *zipFilesArgs) Error() error {
-	if args.Document == nil {
+	if args.document == nil {
 		return errors.New("no args.Documnet")
 	}
 
-	if args.FileName == "" {
+	if args.fileName == "" {
 		return errors.New("no args.FileName")
 	}
 
@@ -138,7 +138,7 @@ func zipFiles(args zipFilesArgs) error {
 		return err
 	}
 
-	newZip, err := os.Create(args.FileName)
+	newZip, err := os.Create(args.fileName)
 	if err != nil {
 		return err
 	}
@@ -149,49 +149,49 @@ func zipFiles(args zipFilesArgs) error {
 	defer writer.Close()
 
 	if err := writeContentFile(writeContentFileArgs{
-		Document: args.Document,
-		Writer:   writer,
+		document: args.document,
+		writer:   writer,
 	}); err != nil {
 		return errors.Wrap(err, "setContent")
 	}
 
 	if err := writeHeaderAndFooterFile(writeHeaderAndFooterFileArgs{
-		Document: args.Document,
-		Writer:   writer,
+		document: args.document,
+		writer:   writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeHeaderAndFooterFile")
 	}
 
 	if err := writeCorePropertiesFile(writeCorePropertiesFileArgs{
-		Writer: writer,
-		Lang:   args.Document.Lang,
+		writer: writer,
+		lang:   args.document.Lang,
 	}); err != nil {
 		return errors.Wrap(err, "writeCorePropertiesFile")
 	}
 
 	if err := writeSettingsFile(writeSettingsFileArgs{
-		Writer: writer,
-		Lang:   args.Document.Lang,
+		writer: writer,
+		lang:   args.document.Lang,
 	}); err != nil {
 		return errors.Wrap(err, "writeSettingsFile")
 	}
 
 	if err := writeContentTypesFile(writeContentTypesFileArgs{
-		Writer:   writer,
-		Document: args.Document,
+		writer:   writer,
+		document: args.document,
 	}); err != nil {
 		return errors.Wrap(err, "writeContentTypesFile")
 	}
 
 	if err := writeWordRelsFile(writeWordRelsFileArgs{
-		Document: args.Document,
-		Writer:   writer,
+		document: args.document,
+		writer:   writer,
 	}); err != nil {
 		return errors.Wrap(err, "setWrodRels")
 	}
 
 	if err := writeTemplatesFiles(writeTemplatesFilesArgs{
-		Writer: writer,
+		writer: writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeTemplatesFiles")
 	}
@@ -200,17 +200,17 @@ func zipFiles(args zipFilesArgs) error {
 }
 
 type writeTemplatesFilesArgs struct {
-	Writer *zip.Writer
+	writer *zip.Writer
 }
 
 func writeTemplatesFiles(args writeTemplatesFilesArgs) error {
 	for _, file := range templatesFilesList() {
-		newFile, err := args.Writer.Create(file.FullName())
+		newFile, err := args.writer.Create(file.FullName())
 		if err != nil {
 			return errors.Wrap(err, "writer.Create")
 		}
 
-		_, err = newFile.Write(file.Bytes)
+		_, err = newFile.Write(file.bytes)
 		if err != nil {
 			return errors.Wrap(err, "contentFile.Write")
 		}
@@ -220,12 +220,12 @@ func writeTemplatesFiles(args writeTemplatesFilesArgs) error {
 }
 
 type writeWordRelsFileArgs struct {
-	Document *Document
-	Writer   *zip.Writer
+	document *Document
+	writer   *zip.Writer
 }
 
 func writeWordRelsFile(args writeWordRelsFileArgs) error {
-	file, err := args.Writer.Create("word/_rels/document.xml.rels")
+	file, err := args.writer.Create("word/_rels/document.xml.rels")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
@@ -239,19 +239,19 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 	buf.WriteString(`<Relationship Id="rId` + SettingsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
 	buf.WriteString(`<Relationship Id="rId` + ThemeID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
 
-	if len(args.Document.Images) != 0 {
+	if len(args.document.Images) != 0 {
 		buf.WriteString(`<Relationship Id="rId` + ImagesID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`)
 	}
 
-	if len(args.Document.Header) > 0 {
+	if len(args.document.Header) > 0 {
 		buf.WriteString(`<Relationship Id="rId` + HeaderID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
 	}
 
-	if len(args.Document.Footer) > 0 {
+	if len(args.document.Footer) > 0 {
 		buf.WriteString(`<Relationship Id="rId` + FooterID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
 	}
 
-	for _, i := range args.Document.Links {
+	for _, i := range args.document.Links {
 		buf.WriteString(`<Relationship Id="` + i.ID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="` + i.URL + `" TargetMode="External"/>`)
 	}
 
@@ -266,15 +266,15 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 }
 
 type writeCorePropertiesFileArgs struct {
-	Lang   string
-	Writer *zip.Writer
+	lang   string
+	writer *zip.Writer
 }
 
 func writeCorePropertiesFile(args writeCorePropertiesFileArgs) error {
 	createdAt := time.Now()
 	lang := "ru-RU"
 
-	if args.Lang == "en" {
+	if args.lang == "en" {
 		lang = "en-Us"
 	}
 
@@ -292,7 +292,7 @@ func writeCorePropertiesFile(args writeCorePropertiesFileArgs) error {
 	buf.WriteString(`<dc:title></dc:title>`)
 	buf.WriteString(`</cp:coreProperties>`)
 
-	file, err := args.Writer.Create("docProps/core.xml")
+	file, err := args.writer.Create("docProps/core.xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
@@ -306,9 +306,9 @@ func writeCorePropertiesFile(args writeCorePropertiesFileArgs) error {
 }
 
 type writeContentTypesFileArgs struct {
-	Lang     string
-	Document *Document
-	Writer   *zip.Writer
+	lang     string
+	document *Document
+	writer   *zip.Writer
 }
 
 func writeContentTypesFile(args writeContentTypesFileArgs) error {
@@ -326,15 +326,15 @@ func writeContentTypesFile(args writeContentTypesFileArgs) error {
 	buf.WriteString(`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>`)
 	buf.WriteString(`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`)
 
-	for _, i := range args.Document.Images {
+	for _, i := range args.document.Images {
 		buf.WriteString(`<Override PartName="/word/media/` + i.FileName + `" ContentType="` + i.ContentType + `"/>`)
 	}
 
-	if len(args.Document.Footer) > 0 {
+	if len(args.document.Footer) > 0 {
 		buf.WriteString(`<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`)
 	}
 
-	if len(args.Document.Header) > 0 {
+	if len(args.document.Header) > 0 {
 		buf.WriteString(`<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`)
 	}
 
@@ -344,7 +344,7 @@ func writeContentTypesFile(args writeContentTypesFileArgs) error {
 	buf.WriteString(`<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`)
 	buf.WriteString(`</Types>`)
 
-	file, err := args.Writer.Create("[Content_Types].xml")
+	file, err := args.writer.Create("[Content_Types].xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
@@ -358,14 +358,14 @@ func writeContentTypesFile(args writeContentTypesFileArgs) error {
 }
 
 type writeSettingsFileArgs struct {
-	Lang   string
-	Writer *zip.Writer
+	lang   string
+	writer *zip.Writer
 }
 
 func writeSettingsFile(args writeSettingsFileArgs) error {
 	lang := "ru-RU"
 
-	if args.Lang == "en" {
+	if args.lang == "en" {
 		lang = "en-Us"
 	}
 
@@ -384,7 +384,7 @@ func writeSettingsFile(args writeSettingsFileArgs) error {
 	buf.WriteString(`<w:themeFontLang w:val="` + lang + `" w:eastAsia="" w:bidi=""/>`)
 	buf.WriteString(`</w:settings>`)
 
-	file, err := args.Writer.Create("word/settings.xml")
+	file, err := args.writer.Create("word/settings.xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
@@ -398,50 +398,50 @@ func writeSettingsFile(args writeSettingsFileArgs) error {
 }
 
 type templateFile struct {
-	Name     string
-	SavePath string
-	Bytes    []byte
+	name     string
+	savePath string
+	bytes    []byte
 }
 
 func (i *templateFile) FullName() string {
-	if i.SavePath == "" {
-		return i.Name
+	if i.savePath == "" {
+		return i.name
 	}
 
-	return i.SavePath + "/" + i.Name
+	return i.savePath + "/" + i.name
 }
 
 func templatesFilesList() []*templateFile {
 	return []*templateFile{
 		{
-			Name:     ".rels",
-			SavePath: "_rels",
-			Bytes:    []byte(templateRelsRels),
+			name:     ".rels",
+			savePath: "_rels",
+			bytes:    []byte(templateRelsRels),
 		},
 		{
-			Name:     "app.xml",
-			SavePath: "docProps",
-			Bytes:    []byte(templateDocPropsApp),
+			name:     "app.xml",
+			savePath: "docProps",
+			bytes:    []byte(templateDocPropsApp),
 		},
 		{
-			Name:     "styles.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordStyles),
+			name:     "styles.xml",
+			savePath: "word",
+			bytes:    []byte(templateWordStyles),
 		},
 		{
-			Name:     "numbering.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordNumbering),
+			name:     "numbering.xml",
+			savePath: "word",
+			bytes:    []byte(templateWordNumbering),
 		},
 		{
-			Name:     "fontTable.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordFontTable),
+			name:     "fontTable.xml",
+			savePath: "word",
+			bytes:    []byte(templateWordFontTable),
 		},
 		{
-			Name:     "theme1.xml",
-			SavePath: "word/theme",
-			Bytes:    []byte(templateWordTheme),
+			name:     "theme1.xml",
+			savePath: "word/theme",
+			bytes:    []byte(templateWordTheme),
 		},
 	}
 }
