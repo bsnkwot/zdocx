@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/pkg/errors"
@@ -234,22 +233,22 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 	var buf bytes.Buffer
 	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
 	buf.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(StylesID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(NumberingID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(FontTableID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(SettingsID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(ThemeID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + StylesID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + NumberingID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + FontTableID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + SettingsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + ThemeID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
 
 	if len(args.Document.Images) != 0 {
-		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(ImagesID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`)
+		buf.WriteString(`<Relationship Id="rId` + ImagesID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`)
 	}
 
 	if len(args.Document.Header) > 0 {
-		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(HeaderID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
+		buf.WriteString(`<Relationship Id="rId` + HeaderID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
 	}
 
 	if len(args.Document.Footer) > 0 {
-		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(FooterID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
+		buf.WriteString(`<Relationship Id="rId` + FooterID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
 	}
 
 	for _, i := range args.Document.Links {

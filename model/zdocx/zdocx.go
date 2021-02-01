@@ -18,15 +18,15 @@ const (
 	DocumentDefaultMargin  = 1440
 	PageOrientationAlbum   = "album"
 	PageOrientationBook    = "book"
-	StylesID               = 1
-	ImagesID               = 2
-	NumberingID            = 3
-	FontTableID            = 4
-	SettingsID             = 5
-	ThemeID                = 6
-	HeaderID               = 7
-	FooterID               = 8
-	LinkIDPrefix           = "linkId"
+	StylesID               = "fileStylesID"
+	ImagesID               = "fileImagesID"
+	NumberingID            = "fileNumberingID"
+	FontTableID            = "fileFontTableID"
+	SettingsID             = "fileSettingsID"
+	ThemeID                = "fileThemeID"
+	HeaderID               = "fileHeaderID"
+	FooterID               = "fileFooterID"
+	LinkIDPrefix           = "fileLinkId"
 )
 
 type Document struct {
@@ -114,7 +114,7 @@ type Table struct {
 	Grid       []int
 	StyleClass string
 	Width      int
-	CellMargin Margin
+	CellMargin *Margin
 }
 
 func NewDocument() *Document {
@@ -388,11 +388,11 @@ func (d *Document) writeSectionProperties() {
 	d.Buf.WriteString("<w:sectPr>")
 
 	if len(d.Header) != 0 {
-		d.Buf.WriteString(`<w:headerReference w:type="default" r:id="rId` + strconv.Itoa(HeaderID) + `"/>`)
+		d.Buf.WriteString(`<w:headerReference w:type="default" r:id="rId` + HeaderID + `"/>`)
 	}
 
 	if len(d.Footer) != 0 {
-		d.Buf.WriteString(`<w:footerReference w:type="default" r:id="rId` + strconv.Itoa(FooterID) + `"/>`)
+		d.Buf.WriteString(`<w:footerReference w:type="default" r:id="rId` + FooterID + `"/>`)
 	}
 
 	d.Buf.WriteString(`<w:type w:val="nextPage"/>`)
@@ -692,30 +692,14 @@ func (t *Table) GetPropperties() string {
 }
 
 func (t *Table) setCellMargin() {
-	margin := Margin{
-		Top:    t.CellMargin.Top,
-		Bottom: t.CellMargin.Bottom,
-		Left:   t.CellMargin.Left,
-		Right:  t.CellMargin.Right,
+	if t.CellMargin == nil {
+		t.CellMargin = &Margin{
+			Top:    t.CellMargin.Top,
+			Bottom: t.CellMargin.Bottom,
+			Left:   t.CellMargin.Left,
+			Right:  t.CellMargin.Right,
+		}
 	}
-
-	if margin.Top == 0 {
-		margin.Top = TableCellDefaultMargin
-	}
-
-	if margin.Bottom == 0 {
-		margin.Bottom = TableCellDefaultMargin
-	}
-
-	if margin.Left == 0 {
-		margin.Left = TableCellDefaultMargin
-	}
-
-	if margin.Right == 0 {
-		margin.Right = TableCellDefaultMargin
-	}
-
-	t.CellMargin = margin
 }
 
 func (t *Table) Error() error {
