@@ -694,10 +694,10 @@ func (t *Table) GetPropperties() string {
 func (t *Table) setCellMargin() {
 	if t.CellMargin == nil {
 		t.CellMargin = &Margin{
-			Top:    t.CellMargin.Top,
-			Bottom: t.CellMargin.Bottom,
-			Left:   t.CellMargin.Left,
-			Right:  t.CellMargin.Right,
+			Top:    TableCellDefaultMargin,
+			Bottom: TableCellDefaultMargin,
+			Left:   TableCellDefaultMargin,
+			Right:  TableCellDefaultMargin,
 		}
 	}
 }
