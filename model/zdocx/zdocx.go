@@ -96,9 +96,33 @@ type LI struct {
 	Items []interface{}
 }
 
+type TR struct {
+	TD []*TD
+}
+
+type TD struct {
+	Content []interface{}
+}
+
+type Margin struct {
+	Top    int
+	Left   int
+	Right  int
+	Bottom int
+}
+
+type Table struct {
+	TR         []*TR
+	Grid       []int
+	StyleClass string
+	Width      int
+	CellMargin Margin
+}
+
 func NewDocument() *Document {
 	doc := Document{}
-	doc.setStartTags()
+	doc.writeStartTags()
+	doc.writeBody()
 	return &doc
 }
 
@@ -180,7 +204,7 @@ func templatesFilesList() []*templateFile {
 	}
 }
 
-func (d *Document) setStartTags() {
+func (d *Document) writeStartTags() {
 	d.Buf.WriteString(getDocumentStartTags("document"))
 }
 
@@ -188,12 +212,12 @@ func getDocumentStartTags(tag string) string {
 	return `<?xml version="1.0" encoding="utf-8" standalone="yes"?><w:` + tag + ` xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">`
 }
 
-func (d *Document) SetBody() {
+func (d *Document) writeBody() {
 	d.Buf.WriteString("<w:body>")
 }
 
-func (d *Document) SetBodyClose() {
-	d.SetSectionProperties()
+func (d *Document) writeBodyClose() {
+	d.writeSectionProperties()
 	d.Buf.WriteString("</w:body>")
 	d.Buf.WriteString("</w:document>")
 }
@@ -413,7 +437,7 @@ func (s *Style) IsEmpty() bool {
 	return true
 }
 
-func (d *Document) SetSectionProperties() {
+func (d *Document) writeSectionProperties() {
 	d.Buf.WriteString("<w:sectPr>")
 
 	if len(d.Header) != 0 {
@@ -425,8 +449,8 @@ func (d *Document) SetSectionProperties() {
 	}
 
 	d.Buf.WriteString(`<w:type w:val="nextPage"/>`)
-	d.SetPageSizes()
-	d.SetMargins()
+	d.writePageSizes()
+	d.writeMargins()
 	d.Buf.WriteString(`<w:pgNumType w:fmt="decimal"/>`)
 	d.Buf.WriteString(`<w:formProt w:val="false"/>`)
 	d.Buf.WriteString(`<w:textDirection w:val="lrTb"/>`)
@@ -434,7 +458,7 @@ func (d *Document) SetSectionProperties() {
 	d.Buf.WriteString("</w:sectPr>")
 }
 
-func (d *Document) SetPageSizes() {
+func (d *Document) writePageSizes() {
 	width := 12240
 	height := 15840
 
@@ -445,7 +469,7 @@ func (d *Document) SetPageSizes() {
 	d.Buf.WriteString(`<w:pgSz w:w="` + strconv.Itoa(width) + `" w:h="` + strconv.Itoa(height) + `"/>`)
 }
 
-func (d *Document) SetMargins() {
+func (d *Document) writeMargins() {
 	if d.Margin == nil {
 		d.Margin = &Margin{
 			Top:    DocumentDefaultMargin,
@@ -575,29 +599,6 @@ func (d *Document) writeListP(args writeListPArgs) error {
 	d.writeP(item)
 
 	return nil
-}
-
-type TR struct {
-	TD []*TD
-}
-
-type TD struct {
-	Content []interface{}
-}
-
-type Margin struct {
-	Top    int
-	Left   int
-	Right  int
-	Bottom int
-}
-
-type Table struct {
-	TR         []*TR
-	Grid       []int
-	StyleClass string
-	Width      int
-	CellMargin Margin
 }
 
 func (d *Document) writeTd(td *TD, width int) error {

@@ -15,8 +15,6 @@ func main() {
 		},
 	}
 
-	doc.SetBody()
-
 	doc.SetP(&zdocx.Paragraph{
 		StyleClass: "h1",
 		Texts: []*zdocx.Text{
@@ -312,8 +310,6 @@ func main() {
 			},
 		},
 	})
-
-	doc.SetBodyClose()
 
 	if err := doc.Save(zdocx.SaveArgs{
 		FileName: "document",

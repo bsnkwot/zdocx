@@ -10,16 +10,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-type setContentArgs struct {
+type writeContentFileArgs struct {
 	Document *Document
 	Writer   *zip.Writer
 }
 
-func setContent(args setContentArgs) error {
+func writeContentFile(args writeContentFileArgs) error {
 	contentFile, err := args.Writer.Create("word/document.xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
+
+	args.Document.writeBodyClose()
 
 	_, err = contentFile.Write(args.Document.Buf.Bytes())
 	if err != nil {
@@ -29,12 +31,12 @@ func setContent(args setContentArgs) error {
 	return nil
 }
 
-type setHeaderAndFooterArgs struct {
+type writeHeaderAndFooterFileArgs struct {
 	Document *Document
 	Writer   *zip.Writer
 }
 
-func setHeaderAndFooter(args setHeaderAndFooterArgs) error {
+func writeHeaderAndFooterFile(args writeHeaderAndFooterFileArgs) error {
 	if len(args.Document.Header) > 0 {
 		if err := setHeaderOrFooter(setHeaderOrFooterArgs{
 			Document: args.Document,
@@ -141,42 +143,42 @@ func zipFiles(args zipFilesArgs) error {
 	writer := zip.NewWriter(newZip)
 	defer writer.Close()
 
-	if err := setContent(setContentArgs{
+	if err := writeContentFile(writeContentFileArgs{
 		Document: args.Document,
 		Writer:   writer,
 	}); err != nil {
 		return errors.Wrap(err, "setContent")
 	}
 
-	if err := setHeaderAndFooter(setHeaderAndFooterArgs{
+	if err := writeHeaderAndFooterFile(writeHeaderAndFooterFileArgs{
 		Document: args.Document,
 		Writer:   writer,
 	}); err != nil {
-		return errors.Wrap(err, "setHeaderAndFooter")
+		return errors.Wrap(err, "writeHeaderAndFooterFile")
 	}
 
-	if err := setCoreProperies(setCoreProperiesArgs{
+	if err := writeCorePropertiesFile(writeCorePropertiesFileArgs{
 		Writer: writer,
 		Lang:   args.Document.Lang,
 	}); err != nil {
-		return errors.Wrap(err, "setCoreProperies")
+		return errors.Wrap(err, "writeCorePropertiesFile")
 	}
 
-	if err := setSettings(setSettingsArgs{
+	if err := writeSettingsFile(writeSettingsFileArgs{
 		Writer: writer,
 		Lang:   args.Document.Lang,
 	}); err != nil {
-		return errors.Wrap(err, "setSettings")
+		return errors.Wrap(err, "writeSettingsFile")
 	}
 
-	if err := setContentTypes(setContentTypesArgs{
+	if err := writeContentTypesFile(writeContentTypesFileArgs{
 		Writer:   writer,
 		Document: args.Document,
 	}); err != nil {
-		return errors.Wrap(err, "setContentTypes")
+		return errors.Wrap(err, "writeContentTypesFile")
 	}
 
-	if err := setWordRels(setWordRelsArgs{
+	if err := writeWordRelsFile(writeWordRelsFileArgs{
 		Document: args.Document,
 		Writer:   writer,
 	}); err != nil {
@@ -198,12 +200,12 @@ func zipFiles(args zipFilesArgs) error {
 	return nil
 }
 
-type setWordRelsArgs struct {
+type writeWordRelsFileArgs struct {
 	Document *Document
 	Writer   *zip.Writer
 }
 
-func setWordRels(args setWordRelsArgs) error {
+func writeWordRelsFile(args writeWordRelsFileArgs) error {
 	file, err := args.Writer.Create("word/_rels/document.xml.rels")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
@@ -244,12 +246,12 @@ func setWordRels(args setWordRelsArgs) error {
 	return nil
 }
 
-type setCoreProperiesArgs struct {
+type writeCorePropertiesFileArgs struct {
 	Lang   string
 	Writer *zip.Writer
 }
 
-func setCoreProperies(args setCoreProperiesArgs) error {
+func writeCorePropertiesFile(args writeCorePropertiesFileArgs) error {
 	createdAt := time.Now()
 	lang := "ru-RU"
 
@@ -284,13 +286,13 @@ func setCoreProperies(args setCoreProperiesArgs) error {
 	return nil
 }
 
-type setContentTypesArgs struct {
+type writeContentTypesFileArgs struct {
 	Lang     string
 	Document *Document
 	Writer   *zip.Writer
 }
 
-func setContentTypes(args setContentTypesArgs) error {
+func writeContentTypesFile(args writeContentTypesFileArgs) error {
 	var buf bytes.Buffer
 	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
 	buf.WriteString(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`)
@@ -336,12 +338,12 @@ func setContentTypes(args setContentTypesArgs) error {
 	return nil
 }
 
-type setSettingsArgs struct {
+type writeSettingsFileArgs struct {
 	Lang   string
 	Writer *zip.Writer
 }
 
-func setSettings(args setSettingsArgs) error {
+func writeSettingsFile(args writeSettingsFileArgs) error {
 	lang := "ru-RU"
 
 	if args.Lang == "en" {
