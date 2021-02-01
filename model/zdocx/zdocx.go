@@ -4,7 +4,9 @@ import (
 
 	// "io/ioutil"
 	"bytes"
+	"math/rand"
 	"strconv"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -28,6 +30,7 @@ const (
 	ThemeID                = 6
 	HeaderID               = 7
 	FooterID               = 8
+	LinkIDPrefix           = "linkId"
 )
 
 type Document struct {
@@ -39,9 +42,17 @@ type Document struct {
 	Margin          *Margin
 	FontSize        int
 	Images          []*Image
+	Links           []*Link
+}
+
+type Link struct {
+	URL  string
+	Text string
 }
 
 type Image struct {
+	FileName    string
+	ContentType string
 }
 
 type SectionProperties struct {
@@ -63,6 +74,7 @@ type Style struct {
 
 type Text struct {
 	Text       string
+	Link       *Link
 	StyleClass string
 	Style
 }
@@ -121,8 +133,7 @@ func (d *Document) Save(args SaveArgs) error {
 }
 
 type templateFile struct {
-	Name string
-	// TemplatePath string
+	Name     string
 	SavePath string
 	Bytes    []byte
 }
@@ -147,25 +158,10 @@ func templatesFilesList() []*templateFile {
 			SavePath: "docProps",
 			Bytes:    []byte(templateDocPropsApp),
 		},
-		// {
-		// 	Name:     "core.xml",
-		// 	SavePath: "docProps",
-		// 	Bytes:    []byte(templateDocPropsCore),
-		// },
-		{
-			Name:     "[Content_Types].xml",
-			SavePath: "",
-			Bytes:    []byte(templateContentTypes),
-		},
 		{
 			Name:     "styles.xml",
 			SavePath: "word",
 			Bytes:    []byte(templateWordStyles),
-		},
-		{
-			Name:     "settings.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordSettings),
 		},
 		{
 			Name:     "numbering.xml",
@@ -177,11 +173,6 @@ func templatesFilesList() []*templateFile {
 			SavePath: "word",
 			Bytes:    []byte(templateWordFontTable),
 		},
-		// {
-		// 	Name:     "document.xml.rels",
-		// 	SavePath: "word/_rels",
-		// 	Bytes:    []byte(templateWordRelsDocument),
-		// },
 		{
 			Name:     "theme1.xml",
 			SavePath: "word/theme",
@@ -301,16 +292,31 @@ func (p *Paragraph) GetProperties() string {
 	return buf.String()
 }
 
+func uniqueID(prefix string) string {
+	rand.Seed(time.Now().UnixNano())
+	return prefix + strconv.Itoa(rand.Intn(100000))
+}
+
 func (t *Text) String() string {
 	if t.Text == "" {
 		return ""
 	}
 
 	var buf bytes.Buffer
+
+	if t.Link != nil {
+		id := uniqueID(LinkIDPrefix)
+		buf.WriteString(`<w:hyperlink r:id="` + id + `">`)
+	}
+
 	buf.WriteString("<w:r>")
 	buf.WriteString(t.GetProperties())
 	buf.WriteString("<w:t>" + t.Text + "</w:t>")
 	buf.WriteString("</w:r>")
+
+	if t.Link != nil {
+		buf.WriteString("</w:hyperlink>")
+	}
 
 	return buf.String()
 }
@@ -323,7 +329,13 @@ func (t *Text) GetProperties() string {
 	var buf bytes.Buffer
 
 	buf.WriteString("<w:rPr>")
-	buf.WriteString(getCommonStyleClass(t.StyleClass))
+
+	if t.Link != nil {
+		buf.WriteString(`<w:rStyle w:val="hyperlink" />`)
+	} else {
+		buf.WriteString(getCommonStyleClass(t.StyleClass))
+	}
+
 	buf.WriteString(getCommonStyle(t.Style))
 	buf.WriteString("</w:rPr>")
 
