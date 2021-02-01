@@ -4,9 +4,7 @@ import (
 
 	// "io/ioutil"
 	"bytes"
-	"math/rand"
 	"strconv"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -48,6 +46,7 @@ type Document struct {
 type Link struct {
 	URL  string
 	Text string
+	ID   string
 }
 
 type Image struct {
@@ -203,19 +202,28 @@ func (d *Document) String() string {
 	return d.Buf.String()
 }
 
-func (d *Document) SetSpace() string {
-	return setSpace()
+func (d *Document) SetSpace() {
+	d.writeSpace()
 }
 
-func setSpace() string {
+func (d *Document) writeSpace() {
+	d.Buf.WriteString(getSpace())
+	// return setSpace()
+}
+
+func getSpace() string {
 	return `<w:r><w:t xml:space="preserve"> </w:t></w:r>`
 }
 
 func (d *Document) SetP(p *Paragraph) {
-	d.Buf.WriteString(p.String())
+	d.writeP(p)
 }
 
-func (p *Paragraph) String() string {
+func (d *Document) writeP(p *Paragraph) {
+	d.Buf.WriteString(p.String(d))
+}
+
+func (p *Paragraph) String(d *Document) string {
 	var buf bytes.Buffer
 
 	buf.WriteString("<w:p>")
@@ -223,10 +231,10 @@ func (p *Paragraph) String() string {
 
 	for index, t := range p.Texts {
 		if index != 0 {
-			buf.WriteString(setSpace())
+			buf.WriteString(getSpace())
 		}
 
-		buf.WriteString(t.String())
+		buf.WriteString(t.String(d))
 	}
 
 	buf.WriteString("</w:p>")
@@ -292,21 +300,20 @@ func (p *Paragraph) GetProperties() string {
 	return buf.String()
 }
 
-func uniqueID(prefix string) string {
-	rand.Seed(time.Now().UnixNano())
-	return prefix + strconv.Itoa(rand.Intn(100000))
-}
+func (t *Text) String(d *Document) string {
+	if t == nil {
+		return ""
+	}
 
-func (t *Text) String() string {
 	if t.Text == "" {
 		return ""
 	}
 
 	var buf bytes.Buffer
-
 	if t.Link != nil {
-		id := uniqueID(LinkIDPrefix)
-		buf.WriteString(`<w:hyperlink r:id="` + id + `">`)
+		t.Link.ID = LinkIDPrefix + strconv.Itoa(len(d.Links))
+		d.Links = append(d.Links, t.Link)
+		buf.WriteString(`<w:hyperlink r:id="` + t.Link.ID + `">`)
 	}
 
 	buf.WriteString("<w:r>")
@@ -322,7 +329,7 @@ func (t *Text) String() string {
 }
 
 func (t *Text) GetProperties() string {
-	if t.Style.IsEmpty() && t.StyleClass == "" {
+	if t.Style.IsEmpty() && t.StyleClass == "" && t.Link == nil {
 		return ""
 	}
 
@@ -454,117 +461,102 @@ func (d *Document) SetMargins() {
 func (d *Document) SetList(list *List) error {
 	var infinityLoopCnt int
 
-	listString, err := getList(getListArgs{
+	if err := d.writeList(writeListArgs{
 		List:            list,
 		Level:           0,
 		InfinityLoopCnt: &infinityLoopCnt,
-	})
-	if err != nil {
-		return errors.Wrap(err, "getList")
+	}); err != nil {
+		return errors.Wrap(err, "d.writeList")
 	}
-
-	d.Buf.WriteString(listString)
 
 	return nil
 }
 
-type getListArgs struct {
+type writeListArgs struct {
 	List            *List
 	Level           int
 	InfinityLoopCnt *int
 }
 
-func getList(args getListArgs) (string, error) {
+func (d *Document) writeList(args writeListArgs) error {
 	if *args.InfinityLoopCnt >= 1000 {
-		return "", errors.New("infinity loop")
+		return errors.New("infinity loop")
 	}
 
 	*args.InfinityLoopCnt++
 
 	if args.List.LI == nil {
-		return "", nil
+		return nil
 	}
 
-	var buf bytes.Buffer
-
 	for _, li := range args.List.LI {
-		if li.Items == nil {
-			continue
-		}
-
 		for index, i := range li.Items {
 			switch i.(type) {
 			case *Paragraph:
-				pString, err := getListP(getListPArgs{
+				if err := d.writeListP(writeListPArgs{
 					Index:    index,
 					ListType: ListBulletType,
 					Level:    args.Level,
 					Item:     i,
-				})
-				if err != nil {
-					return "", errors.Wrap(err, "getListP")
+				}); err != nil {
+					return errors.Wrap(err, "d.writeListP")
 				}
-
-				buf.WriteString(pString)
 			case *List:
-				listInListString, err := getListInList(getListInListArgs{
+				if err := d.writeListInList(writeListInListArgs{
 					Item:            i,
 					Level:           args.Level + 1,
 					InfinityLoopCnt: args.InfinityLoopCnt,
 					Type:            ListBulletType,
-				})
-				if err != nil {
-					return "", errors.Wrap(err, "setListInList")
+				}); err != nil {
+					return errors.Wrap(err, "setListInList")
 				}
-
-				buf.WriteString(listInListString)
 			default:
-				return "", errors.New("undefined item type")
+				return errors.New("undefined item type")
 			}
 		}
 	}
 
-	return buf.String(), nil
+	return nil
 }
 
-type getListInListArgs struct {
+type writeListInListArgs struct {
 	Item            interface{}
 	Level           int
 	InfinityLoopCnt *int
 	Type            string
 }
 
-func getListInList(args getListInListArgs) (string, error) {
+func (d *Document) writeListInList(args writeListInListArgs) error {
 	list, ok := args.Item.(*List)
 	if !ok {
-		return "", errors.New("can't convert to List")
+		return errors.New("can't convert to List")
 	}
 
 	list.Type = args.Type
 
-	listString, err := getList(getListArgs{
+	err := d.writeList(writeListArgs{
 		List:            list,
 		Level:           args.Level,
 		InfinityLoopCnt: args.InfinityLoopCnt,
 	})
 	if err != nil {
-		return "", errors.Wrap(err, "getList")
+		return errors.Wrap(err, "writeList")
 	}
 
-	return listString, nil
+	return nil
 }
 
-type getListPArgs struct {
+type writeListPArgs struct {
 	Item     interface{}
 	Index    int
 	ListType string
 	Level    int
 }
 
-func getListP(args getListPArgs) (string, error) {
+func (d *Document) writeListP(args writeListPArgs) error {
 	item, ok := args.Item.(*Paragraph)
 	if !ok {
-		return "", errors.New("can't convert to Paragraph")
+		return errors.New("can't convert to Paragraph")
 	}
 
 	if args.Index == 0 {
@@ -580,7 +572,9 @@ func getListP(args getListPArgs) (string, error) {
 		item.Style.MarginLeft = 720 * (args.Level + 1)
 	}
 
-	return item.String(), nil
+	d.writeP(item)
+
+	return nil
 }
 
 type TR struct {
@@ -606,147 +600,112 @@ type Table struct {
 	CellMargin Margin
 }
 
-func (td *TD) GetProperties(width int) string {
-	var buf bytes.Buffer
+func (d *Document) writeTd(td *TD, width int) error {
+	d.Buf.WriteString("<w:tc>")
+	d.Buf.WriteString("<w:tcPr>")
+	d.Buf.WriteString(`<w:tcW w:w="` + strconv.Itoa(width) + `" w:type="dxa" />`)
+	d.Buf.WriteString("<w:tcBorders>")
+	d.Buf.WriteString(`<w:top w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
+	d.Buf.WriteString(`<w:left w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
+	d.Buf.WriteString(`<w:right w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
+	d.Buf.WriteString(`<w:bottom w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
+	d.Buf.WriteString("</w:tcBorders>")
+	d.Buf.WriteString("</w:tcPr>")
 
-	buf.WriteString("<w:tcPr>")
-	buf.WriteString(`<w:tcW w:w="` + strconv.Itoa(width) + `" w:type="dxa" />`)
-	buf.WriteString("<w:tcBorders>")
-	buf.WriteString(`<w:top w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	buf.WriteString(`<w:left w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	buf.WriteString(`<w:right w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	buf.WriteString(`<w:bottom w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	buf.WriteString("</w:tcBorders>")
-	buf.WriteString("</w:tcPr>")
-
-	return buf.String()
-}
-
-func (td *TD) String(width int) (string, error) {
-	content, err := td.GetContent()
-	if err != nil {
-		return "", errors.Wrap(err, "td.GetContent")
+	for _, i := range td.Content {
+		if err := d.writeContentFromInterface(i); err != nil {
+			return errors.Wrap(err, "d.writeContentFromInterface")
+		}
 	}
 
-	var buf bytes.Buffer
+	d.Buf.WriteString("</w:tc>")
 
-	buf.WriteString("<w:tc>")
-	buf.WriteString(td.GetProperties(width))
-	buf.WriteString(content)
-	buf.WriteString("</w:tc>")
-
-	return buf.String(), nil
+	return nil
 }
 
-func getContentFromInterface(content interface{}) (string, error) {
+func (d *Document) writeContentFromInterface(content interface{}) error {
 	switch content.(type) {
 	case *Paragraph:
 		p, ok := content.(*Paragraph)
 		if !ok {
-			return "", errors.New("can't convert to Paragraph")
+			return errors.New("can't convert to Paragraph")
 		}
 
-		return p.String(), nil
+		d.writeP(p)
 	case *List:
 		list, ok := content.(*List)
 		if !ok {
-			return "", errors.New("can't convert to List")
+			return errors.New("can't convert to List")
 		}
 
 		var infinityLoopCnt int
-		listString, err := getList(getListArgs{
+		if err := d.writeList(writeListArgs{
 			List:            list,
 			Level:           0,
 			InfinityLoopCnt: &infinityLoopCnt,
-		})
-		if err != nil {
-			return "", errors.Wrap(err, "setList")
+		}); err != nil {
+			return errors.Wrap(err, "d.writeList")
 		}
-
-		return listString, nil
 	default:
-		return "", errors.New("undefined item type")
-	}
-}
-
-func (td *TD) GetContent() (string, error) {
-	for _, i := range td.Content {
-		contentString, err := getContentFromInterface(i)
-		if err != nil {
-			return "", errors.Wrap(err, "getContentFromInterface")
-		}
-
-		return contentString, nil
+		return errors.New("undefined item type")
 	}
 
-	return "", nil
+	return nil
 }
 
-func (tr *TR) String(table *Table) (string, error) {
-	if len(table.Grid) < len(tr.TD) {
-		return "", errors.New("len of Grim less then len of TD")
+func (d *Document) writeTr(tr *TR, grid []int) error {
+	if len(grid) < len(tr.TD) {
+		return errors.New("len of Grim less then len of TD")
 	}
 
 	if tr.TD == nil {
-		return "", nil
+		return nil
 	}
 
-	var buf bytes.Buffer
-	buf.WriteString("<w:tr>")
+	d.Buf.WriteString("<w:tr>")
 
 	for index, td := range tr.TD {
-		tdString, err := td.String(table.Grid[index])
-		if err != nil {
-			return "", nil
+		if err := d.writeTd(td, grid[index]); err != nil {
+			return nil
 		}
-
-		buf.WriteString(tdString)
 	}
 
-	buf.WriteString("</w:tr>")
+	d.Buf.WriteString("</w:tr>")
 
-	return buf.String(), nil
+	return nil
 }
 
-func (t *Table) String() (string, error) {
+func (d *Document) writeTable(t *Table) error {
 	if t.TR == nil {
-		return "", nil
+		return nil
 	}
 
-	rowsString, err := t.GetRowsString()
-	if err != nil {
-		return "", errors.Wrap(err, "t.GetRowsString")
+	d.Buf.WriteString("<w:tbl>")
+	d.Buf.WriteString(getCommonStyleClass(t.StyleClass))
+	d.Buf.WriteString(t.GetPropperties())
+	d.Buf.WriteString(t.GetGrid())
+
+	if err := d.writeRows(t); err != nil {
+		return errors.Wrap(err, "d.writeRowsString")
 	}
 
-	var buf bytes.Buffer
+	d.Buf.WriteString("</w:tbl>")
 
-	buf.WriteString("<w:tbl>")
-	buf.WriteString(getCommonStyleClass(t.StyleClass))
-	buf.WriteString(t.GetPropperties())
-	buf.WriteString(t.GetGrid())
-	buf.WriteString(rowsString)
-	buf.WriteString("</w:tbl>")
-
-	return buf.String(), nil
+	return nil
 }
 
-func (t *Table) GetRowsString() (string, error) {
+func (d *Document) writeRows(t *Table) error {
 	if t.TR == nil {
-		return "", nil
+		return nil
 	}
-
-	var buf bytes.Buffer
 
 	for _, tr := range t.TR {
-		trString, err := tr.String(t)
-		if err != nil {
-			return "", errors.Wrap(err, "tr.String")
+		if err := d.writeTr(tr, t.Grid); err != nil {
+			return errors.Wrap(err, "d.writeTr")
 		}
-
-		buf.WriteString(trString)
 	}
 
-	return buf.String(), nil
+	return nil
 }
 
 func (t *Table) GetGrid() string {
@@ -828,12 +787,9 @@ func (d *Document) SetTable(table *Table) error {
 		return nil
 	}
 
-	tableString, err := table.String()
-	if err != nil {
+	if err := d.writeTable(table); err != nil {
 		return errors.Wrap(err, "table.String")
 	}
-
-	d.Buf.WriteString(tableString)
 
 	return nil
 }

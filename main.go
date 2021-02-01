@@ -291,6 +291,28 @@ func main() {
 		},
 	})
 
+	doc.SetP(&zdocx.Paragraph{
+		Texts: []*zdocx.Text{
+			{
+				Text: "Simple link test",
+				Link: &zdocx.Link{
+					URL: "https://labrika.ru",
+				},
+			},
+		},
+	})
+
+	doc.SetP(&zdocx.Paragraph{
+		Texts: []*zdocx.Text{
+			{
+				Text: "Second link test",
+				Link: &zdocx.Link{
+					URL: "https://labrika.com",
+				},
+			},
+		},
+	})
+
 	doc.SetBodyClose()
 
 	if err := doc.Save(zdocx.SaveArgs{

@@ -90,7 +90,7 @@ func setHeaderOrFooter(args setHeaderOrFooterArgs) error {
 
 	for _, p := range args.Document.Header {
 		p.StyleClass = args.FileName + "Class"
-		buf.WriteString(p.String())
+		buf.WriteString(p.String(args.Document))
 	}
 
 	buf.WriteString("</w:hdr>")
@@ -230,8 +230,8 @@ func setWordRels(args setWordRelsArgs) error {
 		buf.WriteString(`<Relationship Id="rId` + strconv.Itoa(FooterID) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
 	}
 
-	for index, i := range args.Document.Links {
-		buf.WriteString(`<Relationship Id="` + (LinkIDPrefix + strconv.Itoa(index)) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="` + i.URL + `" TargetMode="External"/>`)
+	for _, i := range args.Document.Links {
+		buf.WriteString(`<Relationship Id="` + i.ID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="` + i.URL + `" TargetMode="External"/>`)
 	}
 
 	buf.WriteString(`</Relationships>`)
