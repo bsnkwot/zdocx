@@ -111,9 +111,8 @@ func setHeaderOrFooter(args setHeaderOrFooterArgs) error {
 }
 
 type zipFilesArgs struct {
-	FileName       string
-	TemplatesFiles []*templateFile
-	Document       *Document
+	FileName string
+	Document *Document
 }
 
 func (args *zipFilesArgs) Error() error {
@@ -185,8 +184,22 @@ func zipFiles(args zipFilesArgs) error {
 		return errors.Wrap(err, "setWrodRels")
 	}
 
-	for _, file := range args.TemplatesFiles {
-		newFile, err := writer.Create(file.FullName())
+	if err := writeTemplatesFiles(writeTemplatesFilesArgs{
+		Writer: writer,
+	}); err != nil {
+		return errors.Wrap(err, "writeTemplatesFiles")
+	}
+
+	return nil
+}
+
+type writeTemplatesFilesArgs struct {
+	Writer *zip.Writer
+}
+
+func writeTemplatesFiles(args writeTemplatesFilesArgs) error {
+	for _, file := range templatesFilesList() {
+		newFile, err := args.Writer.Create(file.FullName())
 		if err != nil {
 			return errors.Wrap(err, "writer.Create")
 		}
@@ -376,6 +389,55 @@ func writeSettingsFile(args writeSettingsFileArgs) error {
 	}
 
 	return nil
+}
+
+type templateFile struct {
+	Name     string
+	SavePath string
+	Bytes    []byte
+}
+
+func (i *templateFile) FullName() string {
+	if i.SavePath == "" {
+		return i.Name
+	}
+
+	return i.SavePath + "/" + i.Name
+}
+
+func templatesFilesList() []*templateFile {
+	return []*templateFile{
+		{
+			Name:     ".rels",
+			SavePath: "_rels",
+			Bytes:    []byte(templateRelsRels),
+		},
+		{
+			Name:     "app.xml",
+			SavePath: "docProps",
+			Bytes:    []byte(templateDocPropsApp),
+		},
+		{
+			Name:     "styles.xml",
+			SavePath: "word",
+			Bytes:    []byte(templateWordStyles),
+		},
+		{
+			Name:     "numbering.xml",
+			SavePath: "word",
+			Bytes:    []byte(templateWordNumbering),
+		},
+		{
+			Name:     "fontTable.xml",
+			SavePath: "word",
+			Bytes:    []byte(templateWordFontTable),
+		},
+		{
+			Name:     "theme1.xml",
+			SavePath: "word/theme",
+			Bytes:    []byte(templateWordTheme),
+		},
+	}
 }
 
 // func addTemplateFileToZip(zipWriter *zip.Writer, fileData *templateFile) error {

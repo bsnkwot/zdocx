@@ -127,8 +127,7 @@ func NewDocument() *Document {
 }
 
 type SaveArgs struct {
-	FileName  string
-	Directory string
+	FileName string
 }
 
 func (args *SaveArgs) Error() error {
@@ -145,63 +144,13 @@ func (d *Document) Save(args SaveArgs) error {
 	}
 
 	if err := zipFiles(zipFilesArgs{
-		FileName:       "test.docx",
-		TemplatesFiles: templatesFilesList(),
-		Document:       d,
+		FileName: "test.docx",
+		Document: d,
 	}); err != nil {
 		return errors.Wrap(err, "ZipFiles")
 	}
 
 	return nil
-}
-
-type templateFile struct {
-	Name     string
-	SavePath string
-	Bytes    []byte
-}
-
-func (i *templateFile) FullName() string {
-	if i.SavePath == "" {
-		return i.Name
-	}
-
-	return i.SavePath + "/" + i.Name
-}
-
-func templatesFilesList() []*templateFile {
-	return []*templateFile{
-		{
-			Name:     ".rels",
-			SavePath: "_rels",
-			Bytes:    []byte(templateRelsRels),
-		},
-		{
-			Name:     "app.xml",
-			SavePath: "docProps",
-			Bytes:    []byte(templateDocPropsApp),
-		},
-		{
-			Name:     "styles.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordStyles),
-		},
-		{
-			Name:     "numbering.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordNumbering),
-		},
-		{
-			Name:     "fontTable.xml",
-			SavePath: "word",
-			Bytes:    []byte(templateWordFontTable),
-		},
-		{
-			Name:     "theme1.xml",
-			SavePath: "word/theme",
-			Bytes:    []byte(templateWordTheme),
-		},
-	}
 }
 
 func (d *Document) writeStartTags() {
