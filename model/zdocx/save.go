@@ -98,7 +98,13 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 
 	for _, p := range args.p {
 		p.StyleClass = args.fileName + "Class"
-		buf.WriteString(p.String(args.document))
+
+		pString, err := p.String(args.document)
+		if err != nil {
+			return errors.Wrap(err, "Paragraph.String")
+		}
+
+		buf.WriteString(pString)
 	}
 
 	buf.WriteString("</w:" + args.tag + ">")
@@ -114,6 +120,48 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 	}
 
 	return nil
+}
+
+type writeMediaFilesArgs struct {
+	document *Document
+	writer   *zip.Writer
+}
+
+func isContentTypeValid(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+
+	if contentType == "image/jpeg" {
+		return true
+	}
+
+	if contentType == "image/png" {
+		return true
+	}
+
+	return false
+}
+
+func writeMediaFiles(args writeMediaFilesArgs) error {
+	for _, i := range args.document.Images {
+		if !isContentTypeValid(i.ContentType) {
+			continue
+		}
+
+		mediaFile, err := args.writer.Create("word/media/" + i.FileName)
+		if err != nil {
+			return errors.Wrap(err, "writer.Create")
+		}
+
+		_, err = mediaFile.Write(i.Bytes)
+		if err != nil {
+			return errors.Wrap(err, "mediaFile.Write")
+		}
+	}
+
+	return nil
+
 }
 
 type zipFilesArgs struct {
@@ -183,11 +231,18 @@ func zipFiles(args zipFilesArgs) error {
 		return errors.Wrap(err, "writeContentTypesFile")
 	}
 
+	if err := writeMediaFiles(writeMediaFilesArgs{
+		document: args.document,
+		writer:   writer,
+	}); err != nil {
+		return errors.Wrap(err, "writeMediaFiles")
+	}
+
 	if err := writeWordRelsFile(writeWordRelsFileArgs{
 		document: args.document,
 		writer:   writer,
 	}); err != nil {
-		return errors.Wrap(err, "setWrodRels")
+		return errors.Wrap(err, "writeWordRelsFile")
 	}
 
 	if err := writeTemplatesFiles(writeTemplatesFilesArgs{
@@ -240,7 +295,9 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 	buf.WriteString(`<Relationship Id="rId` + ThemeID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
 
 	if len(args.document.Images) != 0 {
-		buf.WriteString(`<Relationship Id="rId` + ImagesID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`)
+		for _, i := range args.document.Images {
+			buf.WriteString(`<Relationship Id="` + i.RelsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + i.FileName + `"/>`)
+		}
 	}
 
 	if len(args.document.Header) > 0 {

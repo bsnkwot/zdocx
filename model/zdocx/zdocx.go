@@ -2,31 +2,37 @@ package zdocx
 
 import (
 	"bytes"
+	"image"
+	_ "image/jpeg"
+	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"github.com/pkg/errors"
 )
 
 const (
-	ListDecimalID          = 1
-	ListBulletID           = 2
-	ListNoneID             = 3
-	ListDecimalType        = "decimal"
-	ListBulletType         = "bullet"
-	ListNoneType           = "none"
-	TableCellDefaultMargin = 55
-	DocumentDefaultMargin  = 1440
-	PageOrientationAlbum   = "album"
-	PageOrientationBook    = "book"
-	StylesID               = "fileStylesID"
-	ImagesID               = "fileImagesID"
-	NumberingID            = "fileNumberingID"
-	FontTableID            = "fileFontTableID"
-	SettingsID             = "fileSettingsID"
-	ThemeID                = "fileThemeID"
-	HeaderID               = "fileHeaderID"
-	FooterID               = "fileFooterID"
-	LinkIDPrefix           = "fileLinkId"
+	ListDecimalID               = 1
+	ListBulletID                = 2
+	ListNoneID                  = 3
+	ListDecimalType             = "decimal"
+	ListBulletType              = "bullet"
+	ListNoneType                = "none"
+	TableCellDefaultMargin      = 55
+	DocumentDefaultMargin       = 1440
+	PageOrientationAlbum        = "album"
+	PageOrientationBook         = "book"
+	StylesID                    = "fileStylesID"
+	ImagesID                    = "fileImagesID"
+	NumberingID                 = "fileNumberingID"
+	FontTableID                 = "fileFontTableID"
+	SettingsID                  = "fileSettingsID"
+	ThemeID                     = "fileThemeID"
+	HeaderID                    = "fileHeaderID"
+	FooterID                    = "fileFooterID"
+	LinkIDPrefix                = "fileLinkId"
+	DefaultImageVerticalAlign   = "top"
+	DefaultImageHorisontalAlign = "center"
 )
 
 type Document struct {
@@ -48,13 +54,21 @@ type Link struct {
 }
 
 type Image struct {
-	FileName    string
-	ContentType string
-	Description string
-	RelsID      string
-	Width       int
-	Height      int
-	ID          int
+	FileName        string
+	Extension       string
+	ContentType     string
+	Description     string
+	RelsID          string
+	HorisontalAlign string
+	VerticalAlign   string
+	Width           int
+	Height          int
+	ZIndex          int
+	IsRelative      bool
+	WrapText        bool
+	Margin          *Margin
+	ID              int
+	Bytes           []byte
 }
 
 type SectionProperties struct {
@@ -77,6 +91,7 @@ type Style struct {
 type Text struct {
 	Text       string
 	Link       *Link
+	Image      *Image
 	StyleClass string
 	Style
 }
@@ -191,15 +206,26 @@ func getSpace() string {
 	return `<w:r><w:t xml:space="preserve"> </w:t></w:r>`
 }
 
-func (d *Document) SetP(p *Paragraph) {
-	d.writeP(p)
+func (d *Document) SetP(p *Paragraph) error {
+	if err := d.writeP(p); err != nil {
+		return errors.Wrap(err, "Document.SetP")
+	}
+
+	return nil
 }
 
-func (d *Document) writeP(p *Paragraph) {
-	d.Buf.WriteString(p.String(d))
+func (d *Document) writeP(p *Paragraph) error {
+	pString, err := p.String(d)
+	if err != nil {
+		return errors.Wrap(err, "Paragraph.String")
+	}
+
+	d.Buf.WriteString(pString)
+
+	return nil
 }
 
-func (p *Paragraph) String(d *Document) string {
+func (p *Paragraph) String(d *Document) (string, error) {
 	var buf bytes.Buffer
 
 	buf.WriteString("<w:p>")
@@ -210,12 +236,17 @@ func (p *Paragraph) String(d *Document) string {
 			buf.WriteString(getSpace())
 		}
 
-		buf.WriteString(t.String(d))
+		textString, err := t.String(d)
+		if err != nil {
+			return "", errors.Wrap(err, "Text.String")
+		}
+
+		buf.WriteString(textString)
 	}
 
 	buf.WriteString("</w:p>")
 
-	return buf.String()
+	return buf.String(), nil
 }
 
 func (p *Paragraph) GetListParams() string {
@@ -276,13 +307,13 @@ func (p *Paragraph) GetProperties() string {
 	return buf.String()
 }
 
-func (t *Text) String(d *Document) string {
+func (t *Text) String(d *Document) (string, error) {
 	if t == nil {
-		return ""
+		return "", nil
 	}
 
-	if t.Text == "" {
-		return ""
+	if t.Text == "" && t.Image == nil {
+		return "", nil
 	}
 
 	var buf bytes.Buffer
@@ -290,6 +321,14 @@ func (t *Text) String(d *Document) string {
 		t.Link.ID = LinkIDPrefix + strconv.Itoa(len(d.Links))
 		d.Links = append(d.Links, t.Link)
 		buf.WriteString(`<w:hyperlink r:id="` + t.Link.ID + `">`)
+	}
+
+	if t.Image != nil {
+		imageString, err := t.Image.String(d)
+		if err != nil {
+			return "", errors.Wrap(err, "Iamge.String")
+		}
+		buf.WriteString(imageString)
 	}
 
 	buf.WriteString("<w:r>")
@@ -301,7 +340,7 @@ func (t *Text) String(d *Document) string {
 		buf.WriteString("</w:hyperlink>")
 	}
 
-	return buf.String()
+	return buf.String(), nil
 }
 
 func (t *Text) GetProperties() string {
@@ -435,12 +474,12 @@ func (d *Document) writeMargins() {
 }
 
 func (d *Document) SetList(list *List) error {
-	var infinityLoopCnt int
+	var recursionDepth int
 
 	if err := d.writeList(writeListArgs{
-		list:            list,
-		level:           0,
-		infinityLoopCnt: &infinityLoopCnt,
+		list:           list,
+		level:          0,
+		recursionDepth: &recursionDepth,
 	}); err != nil {
 		return errors.Wrap(err, "d.writeList")
 	}
@@ -449,17 +488,29 @@ func (d *Document) SetList(list *List) error {
 }
 
 type writeListArgs struct {
-	list            *List
-	level           int
-	infinityLoopCnt *int
+	list           *List
+	level          int
+	recursionDepth *int
+}
+
+func (args *writeListArgs) Error() error {
+	if args.recursionDepth == nil {
+		return errors.New("no args.recursionDepth")
+	}
+
+	return nil
 }
 
 func (d *Document) writeList(args writeListArgs) error {
-	if *args.infinityLoopCnt >= 1000 {
+	if err := args.Error(); err != nil {
+		return err
+	}
+
+	if *args.recursionDepth >= 1000 {
 		return errors.New("infinity loop")
 	}
 
-	*args.infinityLoopCnt++
+	*args.recursionDepth++
 
 	if args.list.LI == nil {
 		return nil
@@ -479,10 +530,10 @@ func (d *Document) writeList(args writeListArgs) error {
 				}
 			case *List:
 				if err := d.writeListInList(writeListInListArgs{
-					item:            i,
-					level:           args.level + 1,
-					infinityLoopCnt: args.infinityLoopCnt,
-					listType:        ListBulletType,
+					item:           i,
+					level:          args.level + 1,
+					recursionDepth: args.recursionDepth,
+					listType:       ListBulletType,
 				}); err != nil {
 					return errors.Wrap(err, "setListInList")
 				}
@@ -496,10 +547,10 @@ func (d *Document) writeList(args writeListArgs) error {
 }
 
 type writeListInListArgs struct {
-	item            interface{}
-	level           int
-	infinityLoopCnt *int
-	listType        string
+	item           interface{}
+	level          int
+	recursionDepth *int
+	listType       string
 }
 
 func (d *Document) writeListInList(args writeListInListArgs) error {
@@ -511,9 +562,9 @@ func (d *Document) writeListInList(args writeListInListArgs) error {
 	list.Type = args.listType
 
 	err := d.writeList(writeListArgs{
-		list:            list,
-		level:           args.level,
-		infinityLoopCnt: args.infinityLoopCnt,
+		list:           list,
+		level:          args.level,
+		recursionDepth: args.recursionDepth,
 	})
 	if err != nil {
 		return errors.Wrap(err, "writeList")
@@ -591,11 +642,11 @@ func (d *Document) writeContentFromInterface(content interface{}) error {
 			return errors.New("can't convert to List")
 		}
 
-		var infinityLoopCnt int
+		var recursionDepth int
 		if err := d.writeList(writeListArgs{
-			list:            list,
-			level:           0,
-			infinityLoopCnt: &infinityLoopCnt,
+			list:           list,
+			level:          0,
+			recursionDepth: &recursionDepth,
 		}); err != nil {
 			return errors.Wrap(err, "d.writeList")
 		}
@@ -731,35 +782,133 @@ func (d *Document) SetTable(table *Table) error {
 	return nil
 }
 
-func (d *Document) SetImage(pic *Image) {
-	d.writeImage(pic)
+func (img *Image) Error() error {
+	if img.Width == 0 {
+		return errors.New("no img.Width")
+	}
+
+	return nil
 }
 
-func (d *Document) writeImage(img *Image) {
-	id := len(d.Images)
-	d.Buf.WriteString(`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
-	d.Buf.WriteString(`<pic:nvPicPr>`)
-	d.Buf.WriteString(`<pic:cNvPr id="` + strconv.Itoa(id) + `" name="` + img.FileName + `"/>`)
-	d.Buf.WriteString(`<pic:cNvPicPr/>`)
-	d.Buf.WriteString(`</pic:nvPicPr>`)
-	d.Buf.WriteString(`<pic:blipFill>`)
-	d.Buf.WriteString(`<a:blip r:embed="` + img.RelsID + `" cstate="print"/>`)
-	d.Buf.WriteString(`<a:stretch>`)
-	d.Buf.WriteString(`<a:fillRect/>`)
-	d.Buf.WriteString(`</a:stretch/>`)
-	d.Buf.WriteString(`</pic:blipFill>`)
-	d.Buf.WriteString(`<pic:spPr>`)
-	d.Buf.WriteString(`<a:xfrm>`)
-	d.Buf.WriteString(`<a:off x="0" y="0"/>`)
-	d.Buf.WriteString(`<a:ext cx="` + strconv.Itoa(getSizeInPoints(img.Width)) + `" cy="` + strconv.Itoa(getSizeInPoints(img.Height)) + `"/>`)
-	d.Buf.WriteString(`</a:xfrm>`)
-	d.Buf.WriteString(`<a:prstGeom rst="rect>`)
-	d.Buf.WriteString(`<a:avLst/>`)
-	d.Buf.WriteString(`</a:prstGeom>`)
-	d.Buf.WriteString(`</pic:spPr>`)
-	d.Buf.WriteString(`</pic:pic>`)
+func (img *Image) String(d *Document) (string, error) {
+	if err := img.Error(); err != nil {
+		return "", err
+	}
+
+	if err := img.populateSizes(); err != nil {
+		return "", errors.Wrap(err, "Image.populateSizes")
+	}
+
+	img.ID = len(d.Images)
+	img.RelsID = ImagesID + strconv.Itoa(img.ID)
+	img.ContentType = http.DetectContentType(img.Bytes)
+	img.Extension = filepath.Ext(img.FileName)
+	img.FileName = filepath.Base(img.FileName)
+
+	nameWithoutExt := img.FileName[0 : len(img.FileName)-len(img.Extension)]
+
+	var buf bytes.Buffer
+	buf.WriteString("<w:r>")
+	buf.WriteString(`<w:drawing>`)
+	buf.WriteString(img.getAnchor())
+	buf.WriteString(img.getAlign())
+	buf.WriteString(img.getMargin())
+	buf.WriteString(`<wp:docPr id="` + strconv.Itoa(img.ID) + `" name="` + nameWithoutExt + `" descr=""></wp:docPr>`)
+	buf.WriteString(`<wp:extent cx="` + strconv.Itoa(mmToEMU(img.Width)) + `" cy="` + strconv.Itoa(mmToEMU(img.Height)) + `"/>`)
+	buf.WriteString(`<wp:cNvGraphicFramePr>`)
+	buf.WriteString(`<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>`)
+	buf.WriteString(`</wp:cNvGraphicFramePr>`)
+	buf.WriteString(`<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`)
+	buf.WriteString(`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
+	buf.WriteString(`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
+	buf.WriteString(`<pic:nvPicPr>`)
+	buf.WriteString(`<pic:cNvPr id="` + strconv.Itoa(img.ID) + `" name="` + nameWithoutExt + `"/>`)
+	buf.WriteString(`<pic:cNvPicPr/>`)
+	buf.WriteString(`</pic:nvPicPr>`)
+	buf.WriteString(`<pic:blipFill>`)
+	buf.WriteString(`<a:blip r:embed="` + img.RelsID + `"></a:blip>`)
+	buf.WriteString(`<a:stretch>`)
+	buf.WriteString(`<a:fillRect/>`)
+	buf.WriteString(`</a:stretch>`)
+	buf.WriteString(`</pic:blipFill>`)
+	buf.WriteString(`<pic:spPr>`)
+	buf.WriteString(`<a:xfrm>`)
+	buf.WriteString(`<a:off x="0" y="0"/>`)
+	buf.WriteString(`<a:ext cx="` + strconv.Itoa(mmToEMU(img.Width)) + `" cy="` + strconv.Itoa(mmToEMU(img.Height)) + `"/>`)
+	buf.WriteString(`</a:xfrm>`)
+	buf.WriteString(`<a:prstGeom rst="rect">`)
+	buf.WriteString(`<a:avLst/>`)
+	buf.WriteString(`</a:prstGeom>`)
+	buf.WriteString(`</pic:spPr>`)
+	buf.WriteString(`</pic:pic>`)
+	buf.WriteString(`</a:graphicData>`)
+	buf.WriteString(`</a:graphic>`)
+	buf.WriteString(`</wp:anchor>`)
+	buf.WriteString(`</w:drawing>`)
+	buf.WriteString("</w:r>")
+
+	d.Images = append(d.Images, img)
+
+	return buf.String(), nil
 }
 
-func getSizeInPoints(val int) int {
-	return val
+func (img *Image) populateSizes() error {
+	reader := bytes.NewReader(img.Bytes)
+	config, _, err := image.DecodeConfig(reader)
+	if err != nil {
+		return errors.Wrap(err, "image.DecodeConfig")
+	}
+
+	if img.Width == 0 {
+		img.Width = int(float32(img.Height) * float32(config.Width) / float32(config.Height))
+	}
+
+	if img.Height == 0 {
+		img.Height = int(float32(img.Width) * float32(config.Height) / float32(config.Width))
+	}
+
+	return nil
+}
+
+func (img *Image) getAlign() string {
+	if img.HorisontalAlign == "" && img.VerticalAlign == "" {
+		return ""
+	}
+
+	var buf bytes.Buffer
+
+	buf.WriteString(`<wp:positionH relativeFrom="margin">`)
+	buf.WriteString(`<wp:align>` + img.HorisontalAlign + `</wp:align>`)
+	buf.WriteString(`</wp:positionH>`)
+	buf.WriteString(`<wp:positionV relativeFrom="margin">`)
+	buf.WriteString(`<wp:align>` + img.VerticalAlign + `</wp:align>`)
+	buf.WriteString(`</wp:positionV>`)
+
+	return buf.String()
+}
+
+func (img *Image) getAnchor() string {
+	isRelative := "0"
+	if img.IsRelative {
+		isRelative = "1"
+	}
+
+	if img.Margin == nil {
+		img.Margin = &Margin{}
+	}
+
+	return `<wp:anchor behindDoc="` + isRelative + `" distT="` + strconv.Itoa(mmToEMU(img.Margin.Top)) + `" distB="` + strconv.Itoa(mmToEMU(img.Margin.Bottom)) + `" distL="` + strconv.Itoa(mmToEMU(img.Margin.Left)) + `" distR="` + strconv.Itoa(mmToEMU(img.Margin.Right)) + `" simplePos="0" locked="0" layoutInCell="0" allowOverlap="1" relativeHeight="` + strconv.Itoa(img.ZIndex) + `">`
+}
+
+func (img *Image) getMargin() string {
+	if !img.WrapText {
+		return ""
+	}
+
+	return `<wp:wrapSquare wrapText="largest" distT="0" distB="0" distL="0" distR="0" />`
+}
+
+func mmToEMU(mm int) int {
+	return mm * 36000
+	// return val
 }
