@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -12,27 +13,29 @@ import (
 )
 
 const (
-	ListDecimalID               = 1
-	ListBulletID                = 2
-	ListNoneID                  = 3
-	ListDecimalType             = "decimal"
-	ListBulletType              = "bullet"
-	ListNoneType                = "none"
-	TableCellDefaultMargin      = 55
-	DocumentDefaultMargin       = 1440
-	PageOrientationAlbum        = "album"
-	PageOrientationBook         = "book"
-	StylesID                    = "fileStylesID"
-	ImagesID                    = "fileImagesID"
-	NumberingID                 = "fileNumberingID"
-	FontTableID                 = "fileFontTableID"
-	SettingsID                  = "fileSettingsID"
-	ThemeID                     = "fileThemeID"
-	HeaderID                    = "fileHeaderID"
-	FooterID                    = "fileFooterID"
-	LinkIDPrefix                = "fileLinkId"
-	DefaultImageVerticalAlign   = "top"
-	DefaultImageHorisontalAlign = "center"
+	ListDecimalID          = 1
+	ListBulletID           = 2
+	ListNoneID             = 3
+	ListDecimalType        = "decimal"
+	ListBulletType         = "bullet"
+	ListNoneType           = "none"
+	TableCellDefaultMargin = 100
+	DocumentDefaultMargin  = 1440
+	PageOrientationAlbum   = "album"
+	PageOrientationBook    = "book"
+	StylesID               = "fileStylesID"
+	ImagesID               = "fileImagesID"
+	NumberingID            = "fileNumberingID"
+	FontTableID            = "fileFontTableID"
+	SettingsID             = "fileSettingsID"
+	ThemeID                = "fileThemeID"
+	HeaderID               = "fileHeaderID"
+	FooterID               = "fileFooterID"
+	LinkIDPrefix           = "fileLinkId"
+	PageWidth              = 12240
+	PageHeight             = 15840
+	ImageDisplayFloat      = "float"
+	ImageDisplayInline     = "inline"
 )
 
 type Document struct {
@@ -45,6 +48,7 @@ type Document struct {
 	FontSize        int
 	Images          []*Image
 	Links           []*Link
+	alertImage      *Image
 }
 
 type Link struct {
@@ -54,21 +58,23 @@ type Link struct {
 }
 
 type Image struct {
-	FileName        string
-	Extension       string
-	ContentType     string
-	Description     string
-	RelsID          string
-	HorisontalAlign string
-	VerticalAlign   string
-	Width           int
-	Height          int
-	ZIndex          int
-	IsRelative      bool
-	WrapText        bool
-	Margin          *Margin
-	ID              int
-	Bytes           []byte
+	FileName         string
+	Extension        string
+	ContentType      string
+	Description      string
+	RelsID           string
+	HorisontalAnchor string
+	HorisontalAlign  string
+	VerticalAnchor   string
+	VerticalAlign    string
+	Display          string
+	Width            int
+	Height           int
+	ZIndex           int
+	IsRelative       bool
+	Margin           *Margin
+	ID               int
+	Bytes            []byte
 }
 
 type SectionProperties struct {
@@ -80,12 +86,14 @@ type ListParams struct {
 }
 
 type Style struct {
-	FontSize   int
-	IsBold     bool
-	IsItalic   bool
-	FontFamily string
-	Color      string
-	MarginLeft int
+	FontSize        int
+	IsBold          bool
+	IsItalic        bool
+	PageBreakBefore bool
+	FontFamily      string
+	Color           string
+	HorisontalAlign string
+	Margin          Margin
 }
 
 type Text struct {
@@ -130,11 +138,13 @@ type Margin struct {
 }
 
 type Table struct {
-	TR         []*TR
-	Grid       []int
-	StyleClass string
-	Width      int
-	CellMargin *Margin
+	TR          []*TR
+	Grid        []int
+	Type        string
+	StyleClass  string
+	Width       int
+	CellMargin  *Margin
+	BorderColor string
 }
 
 func NewDocument() *Document {
@@ -154,6 +164,30 @@ func (args *SaveArgs) Error() error {
 	}
 
 	return nil
+}
+
+func (d *Document) GetInnerHeight() int {
+	d.setMarginMaybe()
+
+	pageHeight := PageHeight
+
+	if d.PageOrientation == PageOrientationAlbum {
+		pageHeight = PageWidth
+	}
+
+	return pageHeight - d.Margin.Top - d.Margin.Bottom
+}
+
+func (d *Document) GetInnerWidth() int {
+	d.setMarginMaybe()
+
+	pageWidth := PageWidth
+
+	if d.PageOrientation == PageOrientationAlbum {
+		pageWidth = PageHeight
+	}
+
+	return pageWidth - d.Margin.Left - d.Margin.Right
 }
 
 func (d *Document) Save(args SaveArgs) error {
@@ -176,7 +210,7 @@ func (d *Document) writeStartTags() {
 }
 
 func getDocumentStartTags(tag string) string {
-	return `<?xml version="1.0" encoding="utf-8" standalone="yes"?><w:` + tag + ` xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">`
+	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:` + tag + ` xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" mc:Ignorable="w14 wp14">`
 }
 
 func (d *Document) writeBody() {
@@ -300,11 +334,31 @@ func (p *Paragraph) GetProperties() string {
 
 	buf.WriteString("<w:pPr>")
 	buf.WriteString(p.GetListParams())
-	buf.WriteString(getCommonStyleClass(p.StyleClass))
+	buf.WriteString(p.getStyleClass())
 	buf.WriteString(getCommonStyle(p.Style))
 	buf.WriteString("</w:pPr>")
 
 	return buf.String()
+}
+
+func (p *Paragraph) getStyleClass() string {
+	if p.StyleClass == "" {
+		return "Normal"
+	}
+
+	return `<w:pStyle w:val="` + p.StyleClass + `" />`
+}
+
+func (t *Text) getStyleClass() string {
+	if t.Link != nil {
+		return `<w:rStyle w:val="hyperlink" />`
+	}
+
+	if t.StyleClass == "" {
+		return ""
+	}
+
+	return `<w:rStyle w:val="` + t.StyleClass + `" />`
 }
 
 func (t *Text) String(d *Document) (string, error) {
@@ -328,13 +382,16 @@ func (t *Text) String(d *Document) (string, error) {
 		if err != nil {
 			return "", errors.Wrap(err, "Iamge.String")
 		}
+
 		buf.WriteString(imageString)
 	}
 
-	buf.WriteString("<w:r>")
-	buf.WriteString(t.GetProperties())
-	buf.WriteString("<w:t>" + t.Text + "</w:t>")
-	buf.WriteString("</w:r>")
+	if t.Text != "" {
+		buf.WriteString("<w:r>")
+		buf.WriteString(t.GetProperties())
+		buf.WriteString("<w:t>" + t.Text + "</w:t>")
+		buf.WriteString("</w:r>")
+	}
 
 	if t.Link != nil {
 		buf.WriteString("</w:hyperlink>")
@@ -351,13 +408,7 @@ func (t *Text) GetProperties() string {
 	var buf bytes.Buffer
 
 	buf.WriteString("<w:rPr>")
-
-	if t.Link != nil {
-		buf.WriteString(`<w:rStyle w:val="hyperlink" />`)
-	} else {
-		buf.WriteString(getCommonStyleClass(t.StyleClass))
-	}
-
+	buf.WriteString(t.getStyleClass())
 	buf.WriteString(getCommonStyle(t.Style))
 	buf.WriteString("</w:rPr>")
 
@@ -367,9 +418,9 @@ func (t *Text) GetProperties() string {
 func getCommonStyle(style Style) string {
 	var buf bytes.Buffer
 
-	if style.MarginLeft != 0 {
+	if style.Margin.Left != 0 {
 		buf.WriteString(`<w:pStyle w:val="Normal" />`)
-		buf.WriteString(`<w:ind w:left="` + strconv.Itoa(style.MarginLeft) + `" />`)
+		buf.WriteString(`<w:ind w:left="` + strconv.Itoa(style.Margin.Left) + `" />`)
 	}
 
 	if style.FontFamily != "" {
@@ -388,20 +439,15 @@ func getCommonStyle(style Style) string {
 		buf.WriteString("<w:i />")
 	}
 
-	return buf.String()
-}
-
-func getCommonStyleClass(styleClass string) string {
-	switch styleClass {
-	case "h1":
-		return `<w:pStyle w:val="h1" />`
-	case "h2":
-		return `<w:pStyle w:val="h2" />`
-	case "h3":
-		return `<w:pStyle w:val="h3" />`
+	if style.HorisontalAlign != "" {
+		buf.WriteString(`<w:jc w:val="` + style.HorisontalAlign + `"/>`)
 	}
 
-	return ""
+	if style.PageBreakBefore {
+		buf.WriteString(`<w:pageBreakBefore/>`)
+	}
+
+	return buf.String()
 }
 
 func (s *Style) IsEmpty() bool {
@@ -421,7 +467,11 @@ func (s *Style) IsEmpty() bool {
 		return false
 	}
 
-	if s.MarginLeft != 0 {
+	if s.Margin.Left != 0 {
+		return false
+	}
+
+	if s.PageBreakBefore {
 		return false
 	}
 
@@ -450,17 +500,21 @@ func (d *Document) writeSectionProperties() {
 }
 
 func (d *Document) writePageSizes() {
-	width := 12240
-	height := 15840
+	width := PageWidth
+	height := PageHeight
 
 	if d.PageOrientation == PageOrientationAlbum {
 		height, width = width, height
 	}
 
-	d.Buf.WriteString(`<w:pgSz w:w="` + strconv.Itoa(width) + `" w:h="` + strconv.Itoa(height) + `"/>`)
+	d.Buf.WriteString(`<w:pgSz w:w="` + strconv.Itoa(width) + `" w:h="` + strconv.Itoa(height) + `"`)
+	if d.PageOrientation == PageOrientationAlbum {
+		d.Buf.WriteString(` w:orient="landscape"`)
+	}
+	d.Buf.WriteString(` />`)
 }
 
-func (d *Document) writeMargins() {
+func (d *Document) setMarginMaybe() {
 	if d.Margin == nil {
 		d.Margin = &Margin{
 			Top:    DocumentDefaultMargin,
@@ -469,6 +523,10 @@ func (d *Document) writeMargins() {
 			Bottom: DocumentDefaultMargin,
 		}
 	}
+}
+
+func (d *Document) writeMargins() {
+	d.setMarginMaybe()
 
 	d.Buf.WriteString(`<w:pgMar w:left="` + strconv.Itoa(d.Margin.Left) + `" w:right="` + strconv.Itoa(d.Margin.Right) + `" w:header="` + strconv.Itoa(d.Margin.Top) + `" w:top="2229" w:footer="` + strconv.Itoa(d.Margin.Bottom) + `" w:bottom="2229" w:gutter="0"/>`)
 }
@@ -596,23 +654,24 @@ func (d *Document) writeListP(args writeListPArgs) error {
 			Type:  args.listType,
 		}
 	} else {
-		item.Style.MarginLeft = 720 * (args.level + 1)
+		item.Style.Margin.Left = 720 * (args.level + 1)
 	}
 
-	d.writeP(item)
+	if err := d.writeP(item); err != nil {
+		return errors.Wrap(err, "Document.writeP")
+	}
 
 	return nil
 }
 
-func (d *Document) writeTd(td *TD, width int) error {
+func (d *Document) writeTd(td *TD, table *Table) error {
 	d.Buf.WriteString("<w:tc>")
 	d.Buf.WriteString("<w:tcPr>")
-	d.Buf.WriteString(`<w:tcW w:w="` + strconv.Itoa(width) + `" w:type="dxa" />`)
 	d.Buf.WriteString("<w:tcBorders>")
-	d.Buf.WriteString(`<w:top w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	d.Buf.WriteString(`<w:left w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	d.Buf.WriteString(`<w:right w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
-	d.Buf.WriteString(`<w:bottom w:val="single" w:sz="2" w:space="0" w:color="000000"/>`)
+	d.Buf.WriteString(`<w:top w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
+	d.Buf.WriteString(`<w:left w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
+	d.Buf.WriteString(`<w:bottom w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
+	d.Buf.WriteString(`<w:right w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
 	d.Buf.WriteString("</w:tcBorders>")
 	d.Buf.WriteString("</w:tcPr>")
 
@@ -627,6 +686,16 @@ func (d *Document) writeTd(td *TD, width int) error {
 	return nil
 }
 
+func (d *Document) writeContextualSpacing() {
+	d.Buf.WriteString(`<w:p>`)
+	d.Buf.WriteString(`<w:pPr>`)
+	d.Buf.WriteString(`<w:spacing w:before="0" w:after="200"/>`)
+	d.Buf.WriteString(`<w:ind w:hanging="0"/>`)
+	d.Buf.WriteString(`<w:contextualSpacing/>`)
+	d.Buf.WriteString(`</w:pPr>`)
+	d.Buf.WriteString(`</w:p>`)
+}
+
 func (d *Document) writeContentFromInterface(content interface{}) error {
 	switch content.(type) {
 	case *Paragraph:
@@ -635,7 +704,9 @@ func (d *Document) writeContentFromInterface(content interface{}) error {
 			return errors.New("can't convert to Paragraph")
 		}
 
-		d.writeP(p)
+		if err := d.writeP(p); err != nil {
+			return errors.Wrap(err, "Document.writeP")
+		}
 	case *List:
 		list, ok := content.(*List)
 		if !ok {
@@ -657,20 +728,16 @@ func (d *Document) writeContentFromInterface(content interface{}) error {
 	return nil
 }
 
-func (d *Document) writeTr(tr *TR, grid []int) error {
-	if len(grid) < len(tr.TD) {
-		return errors.New("len of Grim less then len of TD")
-	}
-
+func (d *Document) writeTr(tr *TR, table *Table) error {
 	if tr.TD == nil {
 		return nil
 	}
 
 	d.Buf.WriteString("<w:tr>")
 
-	for index, td := range tr.TD {
-		if err := d.writeTd(td, grid[index]); err != nil {
-			return nil
+	for _, td := range tr.TD {
+		if err := d.writeTd(td, table); err != nil {
+			return err
 		}
 	}
 
@@ -685,7 +752,6 @@ func (d *Document) writeTable(t *Table) error {
 	}
 
 	d.Buf.WriteString("<w:tbl>")
-	d.Buf.WriteString(getCommonStyleClass(t.StyleClass))
 	d.Buf.WriteString(t.GetPropperties())
 	d.Buf.WriteString(t.GetGrid())
 
@@ -704,7 +770,7 @@ func (d *Document) writeRows(t *Table) error {
 	}
 
 	for _, tr := range t.TR {
-		if err := d.writeTr(tr, t.Grid); err != nil {
+		if err := d.writeTr(tr, t); err != nil {
 			return errors.Wrap(err, "d.writeTr")
 		}
 	}
@@ -713,6 +779,10 @@ func (d *Document) writeRows(t *Table) error {
 }
 
 func (t *Table) GetGrid() string {
+	if t.getType() == "autofit" {
+		return ""
+	}
+
 	var buf bytes.Buffer
 
 	buf.WriteString("<w:tblGrid>")
@@ -732,19 +802,47 @@ func (t *Table) GetPropperties() string {
 	t.setCellMargin()
 
 	buf.WriteString("<w:tblPr>")
-	buf.WriteString(`<w:tblW w:w="0" type="auto" />`)
-	buf.WriteString(`<w:jc w:val="left" />`)
-	buf.WriteString(`<w:tblInd w:w="55" w:type="dxa" />`)
-	buf.WriteString(`<w:tblLayout w:type="fixed" />`)
+	buf.WriteString(t.getStyleClass())
+	buf.WriteString(t.getWidth())
+	buf.WriteString(`<w:jc w:val="center" />`)
+	buf.WriteString(`<w:tblInd w:type="dxa" w:w="0" />`)
+	buf.WriteString(`<w:tblLayout w:type="` + t.getType() + `" />`)
 	buf.WriteString(`<w:tblCellMar>`)
 	buf.WriteString(`<w:top w:w="` + strconv.Itoa(t.CellMargin.Top) + `" w:type="dxa" />`)
 	buf.WriteString(`<w:left w:w="` + strconv.Itoa(t.CellMargin.Left) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:right w:w="` + strconv.Itoa(t.CellMargin.Right) + `" w:type="dxa" />`)
 	buf.WriteString(`<w:bottom w:w="` + strconv.Itoa(t.CellMargin.Bottom) + `" w:type="dxa" />`)
+	buf.WriteString(`<w:right w:w="` + strconv.Itoa(t.CellMargin.Right) + `" w:type="dxa" />`)
 	buf.WriteString(`</w:tblCellMar>`)
 	buf.WriteString("</w:tblPr>")
 
 	return buf.String()
+}
+
+func (t *Table) getWidth() string {
+	if t.Width == 0 {
+		return ""
+	}
+
+	return `<w:tblW w:type="dxa" w:w="` + strconv.Itoa(t.Width) + `"/>`
+}
+
+func (t *Table) getStyleClass() string {
+	if t.StyleClass == "" {
+		return `<w:tblStyle w:val="NormalTable"/>`
+	}
+
+	return `<w:tblStyle w:val="` + t.StyleClass + `"/>`
+}
+
+func (t *Table) getType() string {
+	switch t.Type {
+	case "fixed":
+		return "fixed"
+	case "autofit":
+		return "autofit"
+	default:
+		return "autofit"
+	}
 }
 
 func (t *Table) setCellMargin() {
@@ -759,6 +857,10 @@ func (t *Table) setCellMargin() {
 }
 
 func (t *Table) Error() error {
+	if t.getType() == "autofit" {
+		return nil
+	}
+
 	if len(t.TR) > len(t.Grid) {
 		return errors.New("len of TRs more then len of Grid")
 	}
@@ -778,6 +880,8 @@ func (d *Document) SetTable(table *Table) error {
 	if err := d.writeTable(table); err != nil {
 		return errors.Wrap(err, "table.String")
 	}
+
+	d.writeContextualSpacing()
 
 	return nil
 }
@@ -799,22 +903,23 @@ func (img *Image) String(d *Document) (string, error) {
 		return "", errors.Wrap(err, "Image.populateSizes")
 	}
 
-	img.ID = len(d.Images)
+	img.ID = len(d.Images) + 1
 	img.RelsID = ImagesID + strconv.Itoa(img.ID)
 	img.ContentType = http.DetectContentType(img.Bytes)
-	img.Extension = filepath.Ext(img.FileName)
 	img.FileName = filepath.Base(img.FileName)
+	img.Extension = filepath.Ext(img.FileName)
 
 	nameWithoutExt := img.FileName[0 : len(img.FileName)-len(img.Extension)]
 
 	var buf bytes.Buffer
 	buf.WriteString("<w:r>")
 	buf.WriteString(`<w:drawing>`)
-	buf.WriteString(img.getAnchor())
+	buf.WriteString(img.getDisplayTag())
 	buf.WriteString(img.getAlign())
-	buf.WriteString(img.getMargin())
-	buf.WriteString(`<wp:docPr id="` + strconv.Itoa(img.ID) + `" name="` + nameWithoutExt + `" descr=""></wp:docPr>`)
+	buf.WriteString(img.getWrap())
 	buf.WriteString(`<wp:extent cx="` + strconv.Itoa(mmToEMU(img.Width)) + `" cy="` + strconv.Itoa(mmToEMU(img.Height)) + `"/>`)
+	buf.WriteString(`<wp:effectExtent l="0" t="0" r="0" b="0"/>`)
+	buf.WriteString(`<wp:docPr id="` + strconv.Itoa(img.ID) + `" name="` + nameWithoutExt + `" descr=""></wp:docPr>`)
 	buf.WriteString(`<wp:cNvGraphicFramePr>`)
 	buf.WriteString(`<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>`)
 	buf.WriteString(`</wp:cNvGraphicFramePr>`)
@@ -822,34 +927,44 @@ func (img *Image) String(d *Document) (string, error) {
 	buf.WriteString(`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
 	buf.WriteString(`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
 	buf.WriteString(`<pic:nvPicPr>`)
-	buf.WriteString(`<pic:cNvPr id="` + strconv.Itoa(img.ID) + `" name="` + nameWithoutExt + `"/>`)
-	buf.WriteString(`<pic:cNvPicPr/>`)
+	buf.WriteString(`<pic:cNvPr id="` + strconv.Itoa(img.ID) + `" name="` + nameWithoutExt + `" descr=""></pic:cNvPr>`)
+	buf.WriteString(`<pic:cNvPicPr>`)
+	buf.WriteString(`<a:picLocks noChangeAspect="1" noChangeArrowheads="1"/>`)
+	buf.WriteString(`</pic:cNvPicPr>`)
 	buf.WriteString(`</pic:nvPicPr>`)
 	buf.WriteString(`<pic:blipFill>`)
-	buf.WriteString(`<a:blip r:embed="` + img.RelsID + `"></a:blip>`)
+	buf.WriteString(`<a:blip r:embed="` + img.RelsID + `"/>`)
 	buf.WriteString(`<a:stretch>`)
-	buf.WriteString(`<a:fillRect/>`)
+	buf.WriteString(`<a:fillRect />`)
 	buf.WriteString(`</a:stretch>`)
 	buf.WriteString(`</pic:blipFill>`)
-	buf.WriteString(`<pic:spPr>`)
+	buf.WriteString(`<pic:spPr bwMode="auto">`)
 	buf.WriteString(`<a:xfrm>`)
-	buf.WriteString(`<a:off x="0" y="0"/>`)
-	buf.WriteString(`<a:ext cx="` + strconv.Itoa(mmToEMU(img.Width)) + `" cy="` + strconv.Itoa(mmToEMU(img.Height)) + `"/>`)
+	buf.WriteString(`<a:off x="0" y="0" />`)
+	buf.WriteString(`<a:ext cx="` + strconv.Itoa(mmToEMU(img.Width)) + `" cy="` + strconv.Itoa(mmToEMU(img.Height)) + `" />`)
 	buf.WriteString(`</a:xfrm>`)
-	buf.WriteString(`<a:prstGeom rst="rect">`)
+	buf.WriteString(`<a:prstGeom prst="rect">`)
 	buf.WriteString(`<a:avLst/>`)
 	buf.WriteString(`</a:prstGeom>`)
 	buf.WriteString(`</pic:spPr>`)
 	buf.WriteString(`</pic:pic>`)
 	buf.WriteString(`</a:graphicData>`)
 	buf.WriteString(`</a:graphic>`)
-	buf.WriteString(`</wp:anchor>`)
+	buf.WriteString(img.getDislayCloseTag())
 	buf.WriteString(`</w:drawing>`)
 	buf.WriteString("</w:r>")
 
 	d.Images = append(d.Images, img)
 
 	return buf.String(), nil
+}
+
+func (img *Image) getDislayCloseTag() string {
+	if img.Display == ImageDisplayFloat {
+		return `</wp:anchor>`
+	}
+
+	return `</wp:inline>`
 }
 
 func (img *Image) populateSizes() error {
@@ -877,38 +992,100 @@ func (img *Image) getAlign() string {
 
 	var buf bytes.Buffer
 
-	buf.WriteString(`<wp:positionH relativeFrom="margin">`)
-	buf.WriteString(`<wp:align>` + img.HorisontalAlign + `</wp:align>`)
-	buf.WriteString(`</wp:positionH>`)
-	buf.WriteString(`<wp:positionV relativeFrom="margin">`)
-	buf.WriteString(`<wp:align>` + img.VerticalAlign + `</wp:align>`)
-	buf.WriteString(`</wp:positionV>`)
+	if img.HorisontalAlign != "" {
+		buf.WriteString(`<wp:positionH relativeFrom="` + img.getHorisontalAnchor() + `">`)
+		buf.WriteString(`<wp:align>` + img.HorisontalAlign + `</wp:align>`)
+		buf.WriteString(`</wp:positionH>`)
+	}
+
+	if img.VerticalAlign != "" {
+		buf.WriteString(`<wp:positionV relativeFrom="` + img.getVerticalAnchor() + `">`)
+		buf.WriteString(`<wp:align>` + img.VerticalAlign + `</wp:align>`)
+		buf.WriteString(`</wp:positionV>`)
+	}
 
 	return buf.String()
 }
 
-func (img *Image) getAnchor() string {
-	isRelative := "0"
-	if img.IsRelative {
-		isRelative = "1"
+func (img *Image) getVerticalAnchor() string {
+	switch img.VerticalAnchor {
+	case "":
+		return "paragraph"
+	case "bottomMargin":
+		return "bottomMargin"
+	case "insideMargin":
+		return "insideMargin"
+	case "line":
+		return "line"
+	case "margin":
+		return "margin"
+	case "ousideMargin":
+		return "ousideMargin"
+	case "page":
+		return "page"
+	case "paragraph":
+		return "paragraph"
+	case "topMargin":
+		return "topMargin"
+	default:
+		return "paragraph"
 	}
+}
 
+func (img *Image) getHorisontalAnchor() string {
+	switch img.HorisontalAnchor {
+	case "":
+		return "column"
+	case "character":
+		return "character"
+	case "column":
+		return "column"
+	case "insideMargin":
+		return "insideMargin"
+	case "margin":
+		return "margin"
+	case "outsideMargin":
+		return "outsideMargin"
+	case "page":
+		return "page"
+	case "rightMargin":
+		return "rightMargin"
+	case "leftMargin":
+		return "leftMargin"
+	default:
+		return "column"
+	}
+}
+
+func (img *Image) getDisplayTag() string {
 	if img.Margin == nil {
 		img.Margin = &Margin{}
 	}
 
-	return `<wp:anchor behindDoc="` + isRelative + `" distT="` + strconv.Itoa(mmToEMU(img.Margin.Top)) + `" distB="` + strconv.Itoa(mmToEMU(img.Margin.Bottom)) + `" distL="` + strconv.Itoa(mmToEMU(img.Margin.Left)) + `" distR="` + strconv.Itoa(mmToEMU(img.Margin.Right)) + `" simplePos="0" locked="0" layoutInCell="0" allowOverlap="1" relativeHeight="` + strconv.Itoa(img.ZIndex) + `">`
-}
+	if img.Display == ImageDisplayFloat {
+		isRelative := "0"
+		if img.IsRelative {
+			isRelative = "1"
+		}
 
-func (img *Image) getMargin() string {
-	if !img.WrapText {
-		return ""
+		return `<wp:anchor behindDoc="` + isRelative + `" distT="` + strconv.Itoa(mmToEMU(img.Margin.Top)) + `" distB="` + strconv.Itoa(mmToEMU(img.Margin.Bottom)) + `" distL="` + strconv.Itoa(mmToEMU(img.Margin.Left)) + `" distR="` + strconv.Itoa(mmToEMU(img.Margin.Right)) + `" simplePos="0" locked="1" layoutInCell="0" allowOverlap="1" relativeHeight="` + strconv.Itoa(img.ZIndex) + `">`
 	}
 
-	return `<wp:wrapSquare wrapText="largest" distT="0" distB="0" distL="0" distR="0" />`
+	return `<wp:inline distT="` + strconv.Itoa(mmToEMU(img.Margin.Top)) + `" distB="` + strconv.Itoa(mmToEMU(img.Margin.Bottom)) + `" distL="` + strconv.Itoa(mmToEMU(img.Margin.Left)) + `" distR="` + strconv.Itoa(mmToEMU(img.Margin.Right)) + `">`
+}
+
+func (img *Image) getWrap() string {
+	if img.Display == ImageDisplayFloat {
+		return `<wp:wrapSquare wrapText="largest" distT="0" distB="0" distL="0" distR="0" />`
+	}
+
+	return ""
 }
 
 func mmToEMU(mm int) int {
 	return mm * 36000
-	// return val
+}
+
+func (d *Document) SetPageBreak() {
+	d.Buf.WriteString(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`)
 }
