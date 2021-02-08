@@ -44,7 +44,10 @@ type Document struct {
 	Footer          []*Paragraph
 	PageOrientation string
 	Lang            string
-	Margin          *Margin
+	MarginTop       *Margin
+	MarginLeft      *Margin
+	MarginRight     *Margin
+	MarginBottom    *Margin
 	FontSize        int
 	Images          []*Image
 	Links           []*Link
@@ -72,7 +75,10 @@ type Image struct {
 	Height           int
 	ZIndex           int
 	IsRelative       bool
-	Margin           *Margin
+	MarginTop        *Margin
+	MarginLeft       *Margin
+	MarginRight      *Margin
+	MarginBottom     *Margin
 	ID               int
 	Bytes            []byte
 }
@@ -93,7 +99,10 @@ type Style struct {
 	FontFamily      string
 	Color           string
 	HorisontalAlign string
-	Margin          Margin
+	MarginTop       *Margin
+	MarginLeft      *Margin
+	MarginRight     *Margin
+	MarginBottom    *Margin
 }
 
 type Text struct {
@@ -127,14 +136,20 @@ type TR struct {
 }
 
 type TD struct {
-	Content []interface{}
+	StyleClass string
+	Content    []interface{}
 }
 
 type Margin struct {
-	Top    int
-	Left   int
-	Right  int
-	Bottom int
+	Value int
+}
+
+func (i *Margin) String() string {
+	return strconv.Itoa(i.Value)
+}
+
+func (i *Margin) Int() int {
+	return i.Value
 }
 
 type Table struct {
@@ -143,14 +158,22 @@ type Table struct {
 	Type        string
 	StyleClass  string
 	Width       int
-	CellMargin  *Margin
+	CellMargin  *CellMargin
 	BorderColor string
+}
+
+type CellMargin struct {
+	Top    *Margin
+	Left   *Margin
+	Right  *Margin
+	Bottom *Margin
 }
 
 func NewDocument() *Document {
 	doc := Document{}
 	doc.writeStartTags()
 	doc.writeBody()
+	doc.setMarginMaybe()
 	return &doc
 }
 
@@ -167,27 +190,23 @@ func (args *SaveArgs) Error() error {
 }
 
 func (d *Document) GetInnerHeight() int {
-	d.setMarginMaybe()
-
 	pageHeight := PageHeight
 
 	if d.PageOrientation == PageOrientationAlbum {
 		pageHeight = PageWidth
 	}
 
-	return pageHeight - d.Margin.Top - d.Margin.Bottom
+	return pageHeight - d.MarginTop.Int() - d.MarginBottom.Int()
 }
 
 func (d *Document) GetInnerWidth() int {
-	d.setMarginMaybe()
-
 	pageWidth := PageWidth
 
 	if d.PageOrientation == PageOrientationAlbum {
 		pageWidth = PageHeight
 	}
 
-	return pageWidth - d.Margin.Left - d.Margin.Right
+	return pageWidth - d.MarginLeft.Int() - d.MarginRight.Int()
 }
 
 func (d *Document) Save(args SaveArgs) error {
@@ -289,7 +308,6 @@ func (p *Paragraph) GetListParams() string {
 	}
 
 	var buf bytes.Buffer
-	buf.WriteString(`<w:pStyle w:val="ListParagraph" />`)
 	buf.WriteString("<w:numPr>")
 	buf.WriteString(`<w:ilvl w:val="` + strconv.Itoa(p.ListParams.Level) + `" />`)
 
@@ -333,8 +351,8 @@ func (p *Paragraph) GetProperties() string {
 	var buf bytes.Buffer
 
 	buf.WriteString("<w:pPr>")
-	buf.WriteString(p.GetListParams())
 	buf.WriteString(p.getStyleClass())
+	buf.WriteString(p.GetListParams())
 	buf.WriteString(getCommonStyle(p.Style))
 	buf.WriteString("</w:pPr>")
 
@@ -342,8 +360,12 @@ func (p *Paragraph) GetProperties() string {
 }
 
 func (p *Paragraph) getStyleClass() string {
+	if p.ListParams != nil {
+		return `<w:pStyle w:val="ListParagraph" />`
+	}
+
 	if p.StyleClass == "" {
-		return "Normal"
+		return `<w:pStyle w:val="Normal" />`
 	}
 
 	return `<w:pStyle w:val="` + p.StyleClass + `" />`
@@ -418,13 +440,20 @@ func (t *Text) GetProperties() string {
 func getCommonStyle(style Style) string {
 	var buf bytes.Buffer
 
-	if style.Margin.Left != 0 {
-		buf.WriteString(`<w:pStyle w:val="Normal" />`)
-		buf.WriteString(`<w:ind w:left="` + strconv.Itoa(style.Margin.Left) + `" />`)
+	if style.MarginLeft != nil {
+		buf.WriteString(`<w:ind w:left="` + strconv.Itoa(style.MarginLeft.Int()) + `" />`)
+	}
+
+	if style.MarginBottom != nil {
+		buf.WriteString(`<w:spacing w:lineRule="auto" w:line="276" w:before="0" w:after="` + strconv.Itoa(style.MarginBottom.Int()) + `"/>`)
 	}
 
 	if style.FontFamily != "" {
-		buf.WriteString("<w:rFonts w:ascii=\"" + style.FontFamily + "\" w:hAnsi=\"" + style.FontFamily + "\" />")
+		buf.WriteString(`<w:rFonts w:ascii="` + style.FontFamily + `" w:hAnsi="` + style.FontFamily + `" />`)
+	}
+
+	if style.Color != "" {
+		buf.WriteString(`<w:color w:val="` + style.Color + `"/>`)
 	}
 
 	if style.FontSize != 0 {
@@ -467,11 +496,23 @@ func (s *Style) IsEmpty() bool {
 		return false
 	}
 
-	if s.Margin.Left != 0 {
+	if s.MarginLeft != nil {
+		return false
+	}
+
+	if s.MarginBottom != nil {
 		return false
 	}
 
 	if s.PageBreakBefore {
+		return false
+	}
+
+	if s.HorisontalAlign != "" {
+		return false
+	}
+
+	if s.Color != "" {
 		return false
 	}
 
@@ -515,20 +556,25 @@ func (d *Document) writePageSizes() {
 }
 
 func (d *Document) setMarginMaybe() {
-	if d.Margin == nil {
-		d.Margin = &Margin{
-			Top:    DocumentDefaultMargin,
-			Left:   DocumentDefaultMargin,
-			Right:  DocumentDefaultMargin,
-			Bottom: DocumentDefaultMargin,
-		}
+	if d.MarginTop == nil {
+		d.MarginTop = &Margin{Value: DocumentDefaultMargin}
+	}
+
+	if d.MarginLeft == nil {
+		d.MarginLeft = &Margin{Value: DocumentDefaultMargin}
+	}
+
+	if d.MarginRight == nil {
+		d.MarginRight = &Margin{Value: DocumentDefaultMargin}
+	}
+
+	if d.MarginBottom == nil {
+		d.MarginBottom = &Margin{Value: DocumentDefaultMargin}
 	}
 }
 
 func (d *Document) writeMargins() {
-	d.setMarginMaybe()
-
-	d.Buf.WriteString(`<w:pgMar w:left="` + strconv.Itoa(d.Margin.Left) + `" w:right="` + strconv.Itoa(d.Margin.Right) + `" w:header="` + strconv.Itoa(d.Margin.Top) + `" w:top="2229" w:footer="` + strconv.Itoa(d.Margin.Bottom) + `" w:bottom="2229" w:gutter="0"/>`)
+	d.Buf.WriteString(`<w:pgMar w:left="` + d.MarginLeft.String() + `" w:right="` + d.MarginRight.String() + `" w:header="` + d.MarginTop.String() + `" w:top="2229" w:footer="` + d.MarginBottom.String() + `" w:bottom="2229" w:gutter="0"/>`)
 }
 
 func (d *Document) SetList(list *List) error {
@@ -654,7 +700,11 @@ func (d *Document) writeListP(args writeListPArgs) error {
 			Type:  args.listType,
 		}
 	} else {
-		item.Style.Margin.Left = 720 * (args.level + 1)
+		if item.Style.MarginLeft == nil {
+			item.Style.MarginLeft = &Margin{}
+		}
+
+		item.Style.MarginLeft.Value = 720 * (args.level + 1)
 	}
 
 	if err := d.writeP(item); err != nil {
@@ -665,6 +715,10 @@ func (d *Document) writeListP(args writeListPArgs) error {
 }
 
 func (d *Document) writeTd(td *TD, table *Table) error {
+	if table.BorderColor == "" {
+		table.BorderColor = "C0C0C0"
+	}
+
 	d.Buf.WriteString("<w:tc>")
 	d.Buf.WriteString("<w:tcPr>")
 	d.Buf.WriteString("<w:tcBorders>")
@@ -799,7 +853,7 @@ func (t *Table) GetGrid() string {
 func (t *Table) GetPropperties() string {
 	var buf bytes.Buffer
 
-	t.setCellMargin()
+	t.setCellMarginMaybe()
 
 	buf.WriteString("<w:tblPr>")
 	buf.WriteString(t.getStyleClass())
@@ -808,10 +862,10 @@ func (t *Table) GetPropperties() string {
 	buf.WriteString(`<w:tblInd w:type="dxa" w:w="0" />`)
 	buf.WriteString(`<w:tblLayout w:type="` + t.getType() + `" />`)
 	buf.WriteString(`<w:tblCellMar>`)
-	buf.WriteString(`<w:top w:w="` + strconv.Itoa(t.CellMargin.Top) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:left w:w="` + strconv.Itoa(t.CellMargin.Left) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:bottom w:w="` + strconv.Itoa(t.CellMargin.Bottom) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:right w:w="` + strconv.Itoa(t.CellMargin.Right) + `" w:type="dxa" />`)
+	buf.WriteString(`<w:top w:w="` + strconv.Itoa(t.CellMargin.Top.Int()) + `" w:type="dxa" />`)
+	buf.WriteString(`<w:left w:w="` + strconv.Itoa(t.CellMargin.Left.Int()) + `" w:type="dxa" />`)
+	buf.WriteString(`<w:bottom w:w="` + strconv.Itoa(t.CellMargin.Bottom.Int()) + `" w:type="dxa" />`)
+	buf.WriteString(`<w:right w:w="` + strconv.Itoa(t.CellMargin.Right.Int()) + `" w:type="dxa" />`)
 	buf.WriteString(`</w:tblCellMar>`)
 	buf.WriteString("</w:tblPr>")
 
@@ -845,13 +899,13 @@ func (t *Table) getType() string {
 	}
 }
 
-func (t *Table) setCellMargin() {
+func (t *Table) setCellMarginMaybe() {
 	if t.CellMargin == nil {
-		t.CellMargin = &Margin{
-			Top:    TableCellDefaultMargin,
-			Bottom: TableCellDefaultMargin,
-			Left:   TableCellDefaultMargin,
-			Right:  TableCellDefaultMargin,
+		t.CellMargin = &CellMargin{
+			Top:    &Margin{Value: TableCellDefaultMargin},
+			Bottom: &Margin{Value: TableCellDefaultMargin},
+			Left:   &Margin{Value: TableCellDefaultMargin},
+			Right:  &Margin{Value: TableCellDefaultMargin},
 		}
 	}
 }
@@ -1057,10 +1111,26 @@ func (img *Image) getHorisontalAnchor() string {
 	}
 }
 
-func (img *Image) getDisplayTag() string {
-	if img.Margin == nil {
-		img.Margin = &Margin{}
+func (img *Image) setMarginMaybe() {
+	if img.MarginTop == nil {
+		img.MarginTop = &Margin{Value: 0}
 	}
+
+	if img.MarginLeft == nil {
+		img.MarginLeft = &Margin{Value: 0}
+	}
+
+	if img.MarginRight == nil {
+		img.MarginRight = &Margin{Value: 0}
+	}
+
+	if img.MarginBottom == nil {
+		img.MarginBottom = &Margin{Value: 0}
+	}
+}
+
+func (img *Image) getDisplayTag() string {
+	img.setMarginMaybe()
 
 	if img.Display == ImageDisplayFloat {
 		isRelative := "0"
@@ -1068,10 +1138,10 @@ func (img *Image) getDisplayTag() string {
 			isRelative = "1"
 		}
 
-		return `<wp:anchor behindDoc="` + isRelative + `" distT="` + strconv.Itoa(mmToEMU(img.Margin.Top)) + `" distB="` + strconv.Itoa(mmToEMU(img.Margin.Bottom)) + `" distL="` + strconv.Itoa(mmToEMU(img.Margin.Left)) + `" distR="` + strconv.Itoa(mmToEMU(img.Margin.Right)) + `" simplePos="0" locked="1" layoutInCell="0" allowOverlap="1" relativeHeight="` + strconv.Itoa(img.ZIndex) + `">`
+		return `<wp:anchor behindDoc="` + isRelative + `" distT="` + strconv.Itoa(mmToEMU(img.MarginTop.Int())) + `" distB="` + strconv.Itoa(mmToEMU(img.MarginBottom.Int())) + `" distL="` + strconv.Itoa(mmToEMU(img.MarginLeft.Int())) + `" distR="` + strconv.Itoa(mmToEMU(img.MarginRight.Int())) + `" simplePos="0" locked="1" layoutInCell="0" allowOverlap="1" relativeHeight="` + strconv.Itoa(img.ZIndex) + `">`
 	}
 
-	return `<wp:inline distT="` + strconv.Itoa(mmToEMU(img.Margin.Top)) + `" distB="` + strconv.Itoa(mmToEMU(img.Margin.Bottom)) + `" distL="` + strconv.Itoa(mmToEMU(img.Margin.Left)) + `" distR="` + strconv.Itoa(mmToEMU(img.Margin.Right)) + `">`
+	return `<wp:inline distT="` + strconv.Itoa(mmToEMU(img.MarginTop.Int())) + `" distB="` + strconv.Itoa(mmToEMU(img.MarginBottom.Int())) + `" distL="` + strconv.Itoa(mmToEMU(img.MarginLeft.Int())) + `" distR="` + strconv.Itoa(mmToEMU(img.MarginRight.Int())) + `">`
 }
 
 func (img *Image) getWrap() string {

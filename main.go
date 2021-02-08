@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io/ioutil"
+	"os"
 	"zdocx/model/zdocx"
 )
 
@@ -180,16 +182,6 @@ func main() {
 		panic(err)
 	}
 
-	// if err := doc.SetP(&zdocx.Paragraph{
-	// 	Texts: []*zdocx.Text{
-	// 		{
-	// 			Text: "But I must explain to you how all this mistaken idea of denouncing pleasure and praising pain was born and I will give you a complete account of the system, and expound the actual teachings of the great explorer of the truth, the master-builder of human happiness. No one rejects, dislikes, or avoids pleasure itself, because it is pleasure, but because those who do not know how to pursue pleasure rationally encounter consequences that are extremely painful. Nor again is there anyone who loves or pursues or desires to obtain pain of itself, because it is pain, but because occasionally circumstances occur in which toil and pain can procure him some great pleasure. To take a trivial example, which of us ever undertakes laborious physical exercise, except to obtain some advantage from it? But who has any right to find fault with a man who chooses to enjoy a pleasure that has no annoying consequences, or one who avoids a pain that produces no resultant pleasure?",
-	// 		},
-	// 	},
-	// }); err != nil {
-	// 	panic(err)
-	// }
-
 	if err := doc.SetTable(&zdocx.Table{
 		Type:        "fixed",
 		Width:       doc.GetInnerWidth(),
@@ -332,6 +324,249 @@ func main() {
 	}); err != nil {
 		panic(err)
 	}
+
+	file, err := os.Open("temp/img.jpg")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	imageBytes, err := ioutil.ReadAll(file)
+
+	if err := doc.SetP(&zdocx.Paragraph{
+		Style: zdocx.Style{
+			HorisontalAlign: "center",
+		},
+		Texts: []*zdocx.Text{
+			{
+				Image: &zdocx.Image{
+					FileName: file.Name(),
+					Bytes:    imageBytes,
+					Width:    50,
+				},
+			},
+		},
+	}); err != nil {
+		panic(err)
+	}
+
+	docInnerWidth := doc.GetInnerWidth()
+
+	doc.SetTable(&zdocx.Table{
+		Type: "fixed",
+		Grid: []int{
+			int(float32(docInnerWidth) * 0.7),
+			int(float32(docInnerWidth) * 0.1),
+			int(float32(docInnerWidth) * 0.1),
+			int(float32(docInnerWidth) * 0.1),
+		},
+		TR: []*zdocx.TR{
+			{
+				TD: []*zdocx.TD{
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									MarginBottom: &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Style: zdocx.Style{
+											IsBold: true,
+										},
+										Text: "Keywords",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Style: zdocx.Style{
+											IsBold: true,
+										},
+										Text: "11.01.2020",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Style: zdocx.Style{
+											IsBold: true,
+										},
+										Text: "21.01.2020",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Style: zdocx.Style{
+											IsBold: true,
+										},
+										Text: "11.02.2020",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				TD: []*zdocx.TD{
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									MarginBottom: &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "почта россии карточка сведений о контрагенте",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "40",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "18",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "2",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				TD: []*zdocx.TD{
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									MarginBottom: &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "бгт тюмень",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Style: zdocx.Style{
+											Color: zdocx.ErrorColor,
+										},
+										Text: ">50",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									HorisontalAlign: "center",
+									MarginBottom:    &zdocx.Margin{Value: 0},
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "38",
+									},
+								},
+							},
+						},
+					},
+					{
+						Content: []interface{}{
+							&zdocx.Paragraph{
+								Style: zdocx.Style{
+									MarginBottom:    &zdocx.Margin{Value: 0},
+									HorisontalAlign: "center",
+								},
+								Texts: []*zdocx.Text{
+									{
+										Text: "10",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
 	if err := doc.Save(zdocx.SaveArgs{
 		FileName: "document",

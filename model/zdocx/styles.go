@@ -4,6 +4,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	ErrorColor   = "DB5200"
+	AccentColor  = "7B9CE6"
+	WarningColor = "E8990C"
+	SuccessColor = "7CAB2B"
+)
+
 type Alert struct {
 	P     []*Paragraph
 	Width int
@@ -19,16 +26,9 @@ func (alert *Alert) setWidth(d *Document) {
 		pageWidth = PageHeight
 	}
 
-	if d.Margin == nil {
-		d.Margin = &Margin{
-			Top:    DocumentDefaultMargin,
-			Left:   DocumentDefaultMargin,
-			Right:  DocumentDefaultMargin,
-			Bottom: DocumentDefaultMargin,
-		}
-	}
+	d.setMarginMaybe()
 
-	alert.Width = pageWidth - d.Margin.Left - d.Margin.Right
+	alert.Width = pageWidth - int(d.MarginLeft.Value) - int(d.MarginRight.Value)
 }
 
 func (d *Document) SetAlert(alert *Alert) error {
@@ -65,11 +65,11 @@ func (d *Document) SetAlert(alert *Alert) error {
 	}
 
 	if err := d.SetTable(&Table{
-		CellMargin: &Margin{
-			Top:    100,
-			Left:   300,
-			Right:  200,
-			Bottom: 300,
+		CellMargin: &CellMargin{
+			Top:    &Margin{Value: 100},
+			Left:   &Margin{Value: 300},
+			Right:  &Margin{Value: 200},
+			Bottom: &Margin{Value: 100},
 		},
 		BorderColor: "DB4912",
 		Type:        "fixed",
