@@ -65,14 +65,27 @@ func (d *Document) SetAlert(alert *Alert) error {
 	}
 
 	if err := d.SetTable(&Table{
-		CellMargin: &CellMargin{
-			Top:    &Margin{Value: 100},
-			Left:   &Margin{Value: 300},
-			Right:  &Margin{Value: 200},
-			Bottom: &Margin{Value: 100},
+		Style: Style{
+			Borders: Borders{
+				Top: Border{
+					Color: "DB4912",
+					Width: 4,
+				},
+				Left: Border{
+					Color: "DB4912",
+					Width: 4,
+				},
+				Right: Border{
+					Color: "DB4912",
+					Width: 4,
+				},
+				Bottom: Border{
+					Color: "DB4912",
+					Width: 4,
+				},
+			},
 		},
-		BorderColor: "DB4912",
-		Type:        "fixed",
+		Type: "fixed",
 		Grid: []int{
 			alert.Width,
 		},

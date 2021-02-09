@@ -569,11 +569,26 @@ func main() {
 		},
 	})
 
-	if err := doc.Save(zdocx.SaveArgs{
-		FileName: "document",
-	}); err != nil {
+	buf, err := doc.Create()
+	if err != nil {
 		panic(err)
 	}
+
+	f, err := os.Create("temp_file.docx")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		panic(err)
+	}
+
+	// if err := doc.Save(zdocx.SaveArgs{
+	// 	FileName: "document",
+	// }); err != nil {
+	// 	panic(err)
+	// }
 
 	println("done!")
 }

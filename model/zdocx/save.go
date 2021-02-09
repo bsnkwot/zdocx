@@ -181,6 +181,21 @@ func (args *zipFilesArgs) Error() error {
 	return nil
 }
 
+func (doc *Document) Create() (*bytes.Buffer, error) {
+	b := new(bytes.Buffer)
+	writer := zip.NewWriter(b)
+	defer writer.Close()
+
+	if err := zipWrite(zipWriteArgs{
+		writer:   writer,
+		document: doc,
+	}); err != nil {
+		return nil, errors.Wrap(err, "zipWrite")
+	}
+
+	return b, nil
+}
+
 func zipFiles(args zipFilesArgs) error {
 	if err := args.Error(); err != nil {
 		return err
@@ -196,36 +211,52 @@ func zipFiles(args zipFilesArgs) error {
 	writer := zip.NewWriter(newZip)
 	defer writer.Close()
 
+	if err := zipWrite(zipWriteArgs{
+		writer:   writer,
+		document: args.document,
+	}); err != nil {
+		return errors.Wrap(err, "zipWrite")
+	}
+
+	return nil
+}
+
+type zipWriteArgs struct {
+	writer   *zip.Writer
+	document *Document
+}
+
+func zipWrite(args zipWriteArgs) error {
 	if err := writeContentFile(writeContentFileArgs{
 		document: args.document,
-		writer:   writer,
+		writer:   args.writer,
 	}); err != nil {
 		return errors.Wrap(err, "setContent")
 	}
 
 	if err := writeHeaderAndFooterFile(writeHeaderAndFooterFileArgs{
 		document: args.document,
-		writer:   writer,
+		writer:   args.writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeHeaderAndFooterFile")
 	}
 
 	if err := writeCorePropertiesFile(writeCorePropertiesFileArgs{
-		writer: writer,
+		writer: args.writer,
 		lang:   args.document.Lang,
 	}); err != nil {
 		return errors.Wrap(err, "writeCorePropertiesFile")
 	}
 
 	if err := writeSettingsFile(writeSettingsFileArgs{
-		writer: writer,
+		writer: args.writer,
 		lang:   args.document.Lang,
 	}); err != nil {
 		return errors.Wrap(err, "writeSettingsFile")
 	}
 
 	if err := writeContentTypesFile(writeContentTypesFileArgs{
-		writer:   writer,
+		writer:   args.writer,
 		document: args.document,
 	}); err != nil {
 		return errors.Wrap(err, "writeContentTypesFile")
@@ -233,27 +264,27 @@ func zipFiles(args zipFilesArgs) error {
 
 	if err := writeMediaFiles(writeMediaFilesArgs{
 		document: args.document,
-		writer:   writer,
+		writer:   args.writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeMediaFiles")
 	}
 
 	if err := writeWordRelsFile(writeWordRelsFileArgs{
 		document: args.document,
-		writer:   writer,
+		writer:   args.writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeWordRelsFile")
 	}
 
 	// if err := writeStylesFile(writeStylesFileArgs{
 	// 	document: args.document,
-	// 	writer:   writer,
+	// 	writer:   args.writer,
 	// }); err != nil {
 	// 	return errors.Wrap(err, "writeStylesFile")
 	// }
 
 	if err := writeTemplatesFiles(writeTemplatesFilesArgs{
-		writer: writer,
+		writer: args.writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeTemplatesFiles")
 	}
