@@ -182,10 +182,11 @@ func main() {
 		panic(err)
 	}
 
+	doc.SetPageBreak()
+
 	if err := doc.SetTable(&zdocx.Table{
-		Type:        "fixed",
-		Width:       doc.GetInnerWidth(),
-		BorderColor: "000000",
+		Type:  "fixed",
+		Width: doc.GetInnerWidth(),
 		Grid: []int{
 			6480,
 			6480,

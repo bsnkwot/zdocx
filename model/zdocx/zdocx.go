@@ -103,6 +103,19 @@ type Style struct {
 	MarginLeft      *Margin
 	MarginRight     *Margin
 	MarginBottom    *Margin
+	Borders         Borders
+}
+
+type Borders struct {
+	Top    Border
+	Left   Border
+	Right  Border
+	Bottom Border
+}
+
+type Border struct {
+	Width int
+	Color string
 }
 
 type Text struct {
@@ -137,6 +150,7 @@ type TR struct {
 
 type TD struct {
 	StyleClass string
+	Style      Style
 	Content    []interface{}
 }
 
@@ -153,13 +167,13 @@ func (i *Margin) Int() int {
 }
 
 type Table struct {
-	TR          []*TR
-	Grid        []int
-	Type        string
-	StyleClass  string
-	Width       int
-	CellMargin  *CellMargin
-	BorderColor string
+	TR         []*TR
+	Grid       []int
+	Type       string
+	StyleClass string
+	Width      int
+	CellMargin *CellMargin
+	Style      Style
 }
 
 type CellMargin struct {
@@ -457,7 +471,7 @@ func getCommonStyle(style Style) string {
 	}
 
 	if style.FontSize != 0 {
-		buf.WriteString("<w:sz w:val=\"" + strconv.Itoa(style.FontSize) + "\"/>")
+		buf.WriteString(`<w:sz w:val="` + strconv.Itoa(style.FontSize) + `"/>`)
 	}
 
 	if style.IsBold {
@@ -714,18 +728,52 @@ func (d *Document) writeListP(args writeListPArgs) error {
 	return nil
 }
 
-func (d *Document) writeTd(td *TD, table *Table) error {
-	if table.BorderColor == "" {
-		table.BorderColor = "C0C0C0"
+func (td *TD) prepareBorders(borders Borders) {
+	td.Style.Borders.Top.setPropertiesMaybe(borders.Top)
+	td.Style.Borders.Left.setPropertiesMaybe(borders.Left)
+	td.Style.Borders.Right.setPropertiesMaybe(borders.Right)
+	td.Style.Borders.Bottom.setPropertiesMaybe(borders.Bottom)
+}
+
+func (b *Border) setPropertiesMaybe(border Border) {
+	if b.Color == "" {
+		b.Color = border.Color
 	}
 
+	if b.Width == 0 {
+		b.Width = border.Width
+	}
+
+	// b.setDefaultMaybe()
+}
+
+func (b *Border) setDefaultMaybe() {
+	if b.Width == 0 {
+		b.Width = 4
+	}
+
+	if b.Color == "" {
+		b.Color = "C0C0C0"
+	}
+}
+
+func getTdBorder(tagName string, border Border) string {
+	if border.Width == 0 {
+		return ""
+	}
+
+	return `<w:` + tagName + ` w:val="single" w:sz="` + strconv.Itoa(border.Width) + `" w:space="0" w:color="` + border.Color + `"/>`
+}
+
+func (d *Document) writeTd(td *TD) error {
 	d.Buf.WriteString("<w:tc>")
+
 	d.Buf.WriteString("<w:tcPr>")
 	d.Buf.WriteString("<w:tcBorders>")
-	d.Buf.WriteString(`<w:top w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
-	d.Buf.WriteString(`<w:left w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
-	d.Buf.WriteString(`<w:bottom w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
-	d.Buf.WriteString(`<w:right w:val="single" w:sz="4" w:space="0" w:color="` + table.BorderColor + `"/>`)
+	d.Buf.WriteString(getTdBorder("top", td.Style.Borders.Top))
+	d.Buf.WriteString(getTdBorder("left", td.Style.Borders.Left))
+	d.Buf.WriteString(getTdBorder("bottom", td.Style.Borders.Bottom))
+	d.Buf.WriteString(getTdBorder("right", td.Style.Borders.Right))
 	d.Buf.WriteString("</w:tcBorders>")
 	d.Buf.WriteString("</w:tcPr>")
 
@@ -782,7 +830,7 @@ func (d *Document) writeContentFromInterface(content interface{}) error {
 	return nil
 }
 
-func (d *Document) writeTr(tr *TR, table *Table) error {
+func (d *Document) writeTr(tr *TR, table *Table, index int) error {
 	if tr.TD == nil {
 		return nil
 	}
@@ -790,7 +838,12 @@ func (d *Document) writeTr(tr *TR, table *Table) error {
 	d.Buf.WriteString("<w:tr>")
 
 	for _, td := range tr.TD {
-		if err := d.writeTd(td, table); err != nil {
+		td.prepareBorders(table.Style.Borders)
+		if index == 0 {
+			td.Style.Borders.Bottom.Width = 8
+		}
+
+		if err := d.writeTd(td); err != nil {
 			return err
 		}
 	}
@@ -823,8 +876,8 @@ func (d *Document) writeRows(t *Table) error {
 		return nil
 	}
 
-	for _, tr := range t.TR {
-		if err := d.writeTr(tr, t); err != nil {
+	for index, tr := range t.TR {
+		if err := d.writeTr(tr, t, index); err != nil {
 			return errors.Wrap(err, "d.writeTr")
 		}
 	}
@@ -853,20 +906,21 @@ func (t *Table) GetGrid() string {
 func (t *Table) GetPropperties() string {
 	var buf bytes.Buffer
 
-	t.setCellMarginMaybe()
-
 	buf.WriteString("<w:tblPr>")
 	buf.WriteString(t.getStyleClass())
 	buf.WriteString(t.getWidth())
 	buf.WriteString(`<w:jc w:val="center" />`)
 	buf.WriteString(`<w:tblInd w:type="dxa" w:w="0" />`)
 	buf.WriteString(`<w:tblLayout w:type="` + t.getType() + `" />`)
-	buf.WriteString(`<w:tblCellMar>`)
-	buf.WriteString(`<w:top w:w="` + strconv.Itoa(t.CellMargin.Top.Int()) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:left w:w="` + strconv.Itoa(t.CellMargin.Left.Int()) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:bottom w:w="` + strconv.Itoa(t.CellMargin.Bottom.Int()) + `" w:type="dxa" />`)
-	buf.WriteString(`<w:right w:w="` + strconv.Itoa(t.CellMargin.Right.Int()) + `" w:type="dxa" />`)
-	buf.WriteString(`</w:tblCellMar>`)
+
+	if t.CellMargin != nil {
+		buf.WriteString(`<w:tblCellMar>`)
+		buf.WriteString(`<w:top w:w="` + strconv.Itoa(t.CellMargin.Top.Int()) + `" w:type="dxa" />`)
+		buf.WriteString(`<w:left w:w="` + strconv.Itoa(t.CellMargin.Left.Int()) + `" w:type="dxa" />`)
+		buf.WriteString(`<w:bottom w:w="` + strconv.Itoa(t.CellMargin.Bottom.Int()) + `" w:type="dxa" />`)
+		buf.WriteString(`<w:right w:w="` + strconv.Itoa(t.CellMargin.Right.Int()) + `" w:type="dxa" />`)
+		buf.WriteString(`</w:tblCellMar>`)
+	}
 	buf.WriteString("</w:tblPr>")
 
 	return buf.String()
@@ -882,7 +936,7 @@ func (t *Table) getWidth() string {
 
 func (t *Table) getStyleClass() string {
 	if t.StyleClass == "" {
-		return `<w:tblStyle w:val="NormalTable"/>`
+		return `<w:tblStyle w:val="normalTable"/>`
 	}
 
 	return `<w:tblStyle w:val="` + t.StyleClass + `"/>`
@@ -899,17 +953,6 @@ func (t *Table) getType() string {
 	}
 }
 
-func (t *Table) setCellMarginMaybe() {
-	if t.CellMargin == nil {
-		t.CellMargin = &CellMargin{
-			Top:    &Margin{Value: TableCellDefaultMargin},
-			Bottom: &Margin{Value: TableCellDefaultMargin},
-			Left:   &Margin{Value: TableCellDefaultMargin},
-			Right:  &Margin{Value: TableCellDefaultMargin},
-		}
-	}
-}
-
 func (t *Table) Error() error {
 	if t.getType() == "autofit" {
 		return nil
@@ -922,6 +965,38 @@ func (t *Table) Error() error {
 	return nil
 }
 
+func (b *Borders) isEmpty() bool {
+	if !b.Top.isEmpty() {
+		return false
+	}
+
+	if !b.Left.isEmpty() {
+		return false
+	}
+
+	if !b.Right.isEmpty() {
+		return false
+	}
+
+	if !b.Bottom.isEmpty() {
+		return false
+	}
+
+	return true
+}
+
+func (b *Border) isEmpty() bool {
+	if b.Width != 0 {
+		return false
+	}
+
+	if b.Color != "" {
+		return false
+	}
+
+	return true
+}
+
 func (d *Document) SetTable(table *Table) error {
 	if err := table.Error(); err != nil {
 		return err
@@ -929,6 +1004,13 @@ func (d *Document) SetTable(table *Table) error {
 
 	if table.TR == nil {
 		return nil
+	}
+
+	if table.Style.Borders.isEmpty() {
+		table.Style.Borders.Bottom = Border{
+			Width: 4,
+			Color: "C0C0C0",
+		}
 	}
 
 	if err := d.writeTable(table); err != nil {

@@ -3,7 +3,6 @@ package zdocx
 import (
 	"archive/zip"
 	"bytes"
-	"io"
 	"os"
 	"time"
 
@@ -246,12 +245,12 @@ func zipFiles(args zipFilesArgs) error {
 		return errors.Wrap(err, "writeWordRelsFile")
 	}
 
-	if err := writeStylesFile(writeStylesFileArgs{
-		document: args.document,
-		writer:   writer,
-	}); err != nil {
-		return errors.Wrap(err, "writeStylesFile")
-	}
+	// if err := writeStylesFile(writeStylesFileArgs{
+	// 	document: args.document,
+	// 	writer:   writer,
+	// }); err != nil {
+	// 	return errors.Wrap(err, "writeStylesFile")
+	// }
 
 	if err := writeTemplatesFiles(writeTemplatesFilesArgs{
 		writer: writer,
@@ -271,39 +270,39 @@ type writeStylesFileArgs struct {
 	document *Document
 }
 
-func writeStylesFile(args writeStylesFileArgs) error {
-	file, err := os.Open("temp/styles.xml")
-	if err != nil {
-		return errors.Wrap(err, "os.Open")
-	}
+// func writeStylesFile(args writeStylesFileArgs) error {
+// 	file, err := os.Open("temp/styles.xml")
+// 	if err != nil {
+// 		return errors.Wrap(err, "os.Open")
+// 	}
 
-	defer file.Close()
+// 	defer file.Close()
 
-	info, err := file.Stat()
-	if err != nil {
-		return errors.Wrap(err, "file.Stat")
-	}
+// 	info, err := file.Stat()
+// 	if err != nil {
+// 		return errors.Wrap(err, "file.Stat")
+// 	}
 
-	header, err := zip.FileInfoHeader(info)
-	if err != nil {
-		return errors.Wrap(err, "zip.FileInfoHeader")
-	}
+// 	header, err := zip.FileInfoHeader(info)
+// 	if err != nil {
+// 		return errors.Wrap(err, "zip.FileInfoHeader")
+// 	}
 
-	header.Name = "word/styles.xml"
-	header.Method = zip.Deflate
+// 	header.Name = "word/styles.xml"
+// 	header.Method = zip.Deflate
 
-	writer, err := args.writer.CreateHeader(header)
-	if err != nil {
-		return errors.Wrap(err, "zip.Writer.CreateHeader")
-	}
+// 	writer, err := args.writer.CreateHeader(header)
+// 	if err != nil {
+// 		return errors.Wrap(err, "zip.Writer.CreateHeader")
+// 	}
 
-	_, err = io.Copy(writer, file)
-	if err != nil {
-		return errors.Wrap(err, "io.Copy")
-	}
+// 	_, err = io.Copy(writer, file)
+// 	if err != nil {
+// 		return errors.Wrap(err, "io.Copy")
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func writeTemplatesFiles(args writeTemplatesFilesArgs) error {
 	for _, file := range templatesFilesList() {
@@ -527,11 +526,11 @@ func templatesFilesList() []*templateFile {
 			savePath: "docProps",
 			bytes:    []byte(templateDocPropsApp),
 		},
-		// {
-		// 	name:     "styles.xml",
-		// 	savePath: "word",
-		// 	bytes:    []byte(templateWordStyles),
-		// },
+		{
+			name:     "styles.xml",
+			savePath: "word",
+			bytes:    []byte(templateWordStyles),
+		},
 		{
 			name:     "numbering.xml",
 			savePath: "word",
