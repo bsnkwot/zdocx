@@ -2,6 +2,7 @@ package zdocx
 
 import (
 	"bytes"
+	"encoding/xml"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -49,9 +50,15 @@ type Document struct {
 	MarginRight     *Margin
 	MarginBottom    *Margin
 	FontSize        int
-	Images          []*Image
+	images          images
 	Links           []*Link
 	alertImage      *Image
+}
+
+type images struct {
+	content []*Image
+	header  []*Image
+	footer  []*Image
 }
 
 type Link struct {
@@ -75,12 +82,15 @@ type Image struct {
 	Height           int
 	ZIndex           int
 	IsRelative       bool
+	IsBackground     bool
 	MarginTop        *Margin
 	MarginLeft       *Margin
 	MarginRight      *Margin
 	MarginBottom     *Margin
 	ID               int
 	Bytes            []byte
+	isHeader         bool
+	isFooter         bool
 }
 
 type SectionProperties struct {
@@ -99,11 +109,15 @@ type Style struct {
 	FontFamily      string
 	Color           string
 	HorisontalAlign string
-	MarginTop       *Margin
-	MarginLeft      *Margin
-	MarginRight     *Margin
-	MarginBottom    *Margin
+	Margins         Margins
 	Borders         Borders
+}
+
+type Margins struct {
+	Top    *Margin
+	Left   *Margin
+	Bottom *Margin
+	Right  *Margin
 }
 
 type Borders struct {
@@ -149,6 +163,7 @@ type TR struct {
 }
 
 type TD struct {
+	GridSpan   int
 	StyleClass string
 	Style      Style
 	Content    []interface{}
@@ -164,6 +179,44 @@ func (i *Margin) String() string {
 
 func (i *Margin) Int() int {
 	return i.Value
+}
+
+func (m *Margins) IsEmpty() bool {
+	if m.Top != nil {
+		return false
+	}
+
+	if m.Left != nil {
+		return false
+	}
+
+	if m.Bottom != nil {
+		return false
+	}
+
+	if m.Right != nil {
+		return false
+	}
+
+	return true
+}
+
+func (m *Margins) SetValueByDefault(val int) {
+	if m.Top == nil {
+		m.Top = &Margin{Value: val}
+	}
+
+	if m.Left == nil {
+		m.Left = &Margin{Value: val}
+	}
+
+	if m.Bottom == nil {
+		m.Bottom = &Margin{Value: val}
+	}
+
+	if m.Right == nil {
+		m.Right = &Margin{Value: val}
+	}
 }
 
 type Table struct {
@@ -295,12 +348,26 @@ func (d *Document) writeP(p *Paragraph) error {
 func (p *Paragraph) String(d *Document) (string, error) {
 	var buf bytes.Buffer
 
+	commonColor := p.Style.Color
+	commonFontSize := p.Style.FontSize
+
+	p.Style.FontSize = 0
+	p.Style.Color = ""
+
 	buf.WriteString("<w:p>")
 	buf.WriteString(p.GetProperties())
 
 	for index, t := range p.Texts {
 		if index != 0 {
 			buf.WriteString(getSpace())
+		}
+
+		if t.Style.Color == "" {
+			t.Style.Color = commonColor
+		}
+
+		if t.Style.FontSize == 0 {
+			t.Style.FontSize = commonFontSize
 		}
 
 		textString, err := t.String(d)
@@ -367,7 +434,7 @@ func (p *Paragraph) GetProperties() string {
 	buf.WriteString("<w:pPr>")
 	buf.WriteString(p.getStyleClass())
 	buf.WriteString(p.GetListParams())
-	buf.WriteString(getCommonStyle(p.Style))
+	buf.WriteString(p.GetStyles())
 	buf.WriteString("</w:pPr>")
 
 	return buf.String()
@@ -383,6 +450,39 @@ func (p *Paragraph) getStyleClass() string {
 	}
 
 	return `<w:pStyle w:val="` + p.StyleClass + `" />`
+}
+
+func (p *Paragraph) GetStyles() string {
+	var buf bytes.Buffer
+
+	if !p.Style.Margins.IsEmpty() {
+		if p.Style.Margins.Top != nil || p.Style.Margins.Bottom != nil {
+			if p.Style.Margins.Top == nil {
+				p.Style.Margins.Top = &Margin{}
+			}
+
+			if p.Style.Margins.Bottom == nil {
+				p.Style.Margins.Bottom = &Margin{}
+			}
+
+			buf.WriteString(`<w:spacing w:before="` + p.Style.Margins.Top.String() + `" w:after="` + p.Style.Margins.Bottom.String() + `" w:lineRule="auto"/>`)
+
+		}
+
+		p.Style.Margins.SetValueByDefault(0)
+
+		buf.WriteString(`<w:ind w:left="` + p.Style.Margins.Left.String() + `" w:right="` + p.Style.Margins.Right.String() + `"/>`)
+	}
+
+	if p.Style.HorisontalAlign != "" {
+		buf.WriteString(`<w:jc w:val="` + p.Style.HorisontalAlign + `"/>`)
+	}
+
+	if p.Style.PageBreakBefore {
+		buf.WriteString(`<w:pageBreakBefore/>`)
+	}
+
+	return buf.String()
 }
 
 func (t *Text) getStyleClass() string {
@@ -425,7 +525,13 @@ func (t *Text) String(d *Document) (string, error) {
 	if t.Text != "" {
 		buf.WriteString("<w:r>")
 		buf.WriteString(t.GetProperties())
-		buf.WriteString("<w:t>" + t.Text + "</w:t>")
+		buf.WriteString("<w:t>")
+
+		if err := xml.EscapeText(&buf, []byte(t.Text)); err != nil {
+			return "", errors.Wrap(err, "xml.EscapeText")
+		}
+
+		buf.WriteString("</w:t>")
 		buf.WriteString("</w:r>")
 	}
 
@@ -445,49 +551,33 @@ func (t *Text) GetProperties() string {
 
 	buf.WriteString("<w:rPr>")
 	buf.WriteString(t.getStyleClass())
-	buf.WriteString(getCommonStyle(t.Style))
+	buf.WriteString(t.GetStyles())
 	buf.WriteString("</w:rPr>")
 
 	return buf.String()
 }
 
-func getCommonStyle(style Style) string {
+func (t *Text) GetStyles() string {
 	var buf bytes.Buffer
 
-	if style.MarginLeft != nil {
-		buf.WriteString(`<w:ind w:left="` + strconv.Itoa(style.MarginLeft.Int()) + `" />`)
+	if t.Style.FontFamily != "" {
+		buf.WriteString(`<w:rFonts w:ascii="` + t.Style.FontFamily + `" w:hAnsi="` + t.Style.FontFamily + `" />`)
 	}
 
-	if style.MarginBottom != nil {
-		buf.WriteString(`<w:spacing w:lineRule="auto" w:line="276" w:before="0" w:after="` + strconv.Itoa(style.MarginBottom.Int()) + `"/>`)
+	if t.Style.Color != "" {
+		buf.WriteString(`<w:color w:val="` + t.Style.Color + `"/>`)
 	}
 
-	if style.FontFamily != "" {
-		buf.WriteString(`<w:rFonts w:ascii="` + style.FontFamily + `" w:hAnsi="` + style.FontFamily + `" />`)
+	if t.Style.FontSize != 0 {
+		buf.WriteString(`<w:sz w:val="` + strconv.Itoa(t.Style.FontSize) + `"/>`)
 	}
 
-	if style.Color != "" {
-		buf.WriteString(`<w:color w:val="` + style.Color + `"/>`)
-	}
-
-	if style.FontSize != 0 {
-		buf.WriteString(`<w:sz w:val="` + strconv.Itoa(style.FontSize) + `"/>`)
-	}
-
-	if style.IsBold {
+	if t.Style.IsBold {
 		buf.WriteString("<w:b />")
 	}
 
-	if style.IsItalic {
+	if t.Style.IsItalic {
 		buf.WriteString("<w:i />")
-	}
-
-	if style.HorisontalAlign != "" {
-		buf.WriteString(`<w:jc w:val="` + style.HorisontalAlign + `"/>`)
-	}
-
-	if style.PageBreakBefore {
-		buf.WriteString(`<w:pageBreakBefore/>`)
 	}
 
 	return buf.String()
@@ -510,11 +600,7 @@ func (s *Style) IsEmpty() bool {
 		return false
 	}
 
-	if s.MarginLeft != nil {
-		return false
-	}
-
-	if s.MarginBottom != nil {
+	if !s.Margins.IsEmpty() {
 		return false
 	}
 
@@ -588,7 +674,7 @@ func (d *Document) setMarginMaybe() {
 }
 
 func (d *Document) writeMargins() {
-	d.Buf.WriteString(`<w:pgMar w:left="` + d.MarginLeft.String() + `" w:right="` + d.MarginRight.String() + `" w:header="` + d.MarginTop.String() + `" w:top="2229" w:footer="` + d.MarginBottom.String() + `" w:bottom="2229" w:gutter="0"/>`)
+	d.Buf.WriteString(`<w:pgMar w:left="` + d.MarginLeft.String() + `" w:right="` + d.MarginRight.String() + `" w:header="` + d.MarginTop.String() + `" w:top="` + d.MarginTop.String() + `" w:footer="` + d.MarginBottom.String() + `" w:bottom="` + d.MarginBottom.String() + `" w:gutter="0"/>`)
 }
 
 func (d *Document) SetList(list *List) error {
@@ -643,6 +729,7 @@ func (d *Document) writeList(args writeListArgs) error {
 					listType: ListBulletType,
 					level:    args.level,
 					item:     i,
+					style:    args.list.Style,
 				}); err != nil {
 					return errors.Wrap(err, "d.writeListP")
 				}
@@ -696,6 +783,7 @@ type writeListPArgs struct {
 	index    int
 	listType string
 	level    int
+	style    Style
 }
 
 func (d *Document) writeListP(args writeListPArgs) error {
@@ -703,6 +791,8 @@ func (d *Document) writeListP(args writeListPArgs) error {
 	if !ok {
 		return errors.New("can't convert to Paragraph")
 	}
+
+	item.Style.Color = args.style.Color
 
 	if args.index == 0 {
 		if args.listType == "" {
@@ -714,11 +804,11 @@ func (d *Document) writeListP(args writeListPArgs) error {
 			Type:  args.listType,
 		}
 	} else {
-		if item.Style.MarginLeft == nil {
-			item.Style.MarginLeft = &Margin{}
+		if item.Style.Margins.Left == nil {
+			item.Style.Margins.Left = &Margin{}
 		}
 
-		item.Style.MarginLeft.Value = 720 * (args.level + 1)
+		item.Style.Margins.Left.Value = 720 * (args.level + 1)
 	}
 
 	if err := d.writeP(item); err != nil {
@@ -758,27 +848,61 @@ func (b *Border) setDefaultMaybe() {
 }
 
 func getTdBorder(tagName string, border Border) string {
+	val := "single"
+
 	if border.Width == 0 {
-		return ""
+		val = "none"
 	}
 
-	return `<w:` + tagName + ` w:val="single" w:sz="` + strconv.Itoa(border.Width) + `" w:space="0" w:color="` + border.Color + `"/>`
+	if border.Color == "" {
+		border.Color = "C0C0C0"
+	}
+
+	return `<w:` + tagName + ` w:val="` + val + `" w:sz="` + strconv.Itoa(border.Width) + `" w:space="0" w:color="` + border.Color + `"/>`
 }
 
 func (d *Document) writeTd(td *TD) error {
 	d.Buf.WriteString("<w:tc>")
 
 	d.Buf.WriteString("<w:tcPr>")
+
+	if td.GridSpan > 0 {
+		d.Buf.WriteString(`<w:gridSpan w:val="` + strconv.Itoa(td.GridSpan) + `"/>`)
+	}
+
 	d.Buf.WriteString("<w:tcBorders>")
 	d.Buf.WriteString(getTdBorder("top", td.Style.Borders.Top))
 	d.Buf.WriteString(getTdBorder("left", td.Style.Borders.Left))
 	d.Buf.WriteString(getTdBorder("bottom", td.Style.Borders.Bottom))
 	d.Buf.WriteString(getTdBorder("right", td.Style.Borders.Right))
 	d.Buf.WriteString("</w:tcBorders>")
+
+	if !td.Style.Margins.IsEmpty() {
+		d.Buf.WriteString(`<w:tcMar>`)
+
+		if td.Style.Margins.Top != nil {
+			d.Buf.WriteString(`<w:top w:w="` + td.Style.Margins.Top.String() + `" w:type="dxa"/>`)
+		}
+
+		if td.Style.Margins.Left != nil {
+			d.Buf.WriteString(`<w:left w:w="` + td.Style.Margins.Left.String() + `" w:type="dxa"/>`)
+		}
+
+		if td.Style.Margins.Bottom != nil {
+			d.Buf.WriteString(`<w:bottom w:w="` + td.Style.Margins.Bottom.String() + `" w:type="dxa"/>`)
+		}
+
+		if td.Style.Margins.Right != nil {
+			d.Buf.WriteString(`<w:right w:w="` + td.Style.Margins.Right.String() + `" w:type="dxa"/>`)
+		}
+
+		d.Buf.WriteString(`</w:tcMar>`)
+	}
+
 	d.Buf.WriteString("</w:tcPr>")
 
 	for _, i := range td.Content {
-		if err := d.writeContentFromInterface(i); err != nil {
+		if err := d.writeContentFromInterface(i, td.Style); err != nil {
 			return errors.Wrap(err, "d.writeContentFromInterface")
 		}
 	}
@@ -791,20 +915,22 @@ func (d *Document) writeTd(td *TD) error {
 func (d *Document) writeContextualSpacing() {
 	d.Buf.WriteString(`<w:p>`)
 	d.Buf.WriteString(`<w:pPr>`)
-	d.Buf.WriteString(`<w:spacing w:before="0" w:after="200"/>`)
+	d.Buf.WriteString(`<w:spacing w:before="0" w:after="100"/>`)
 	d.Buf.WriteString(`<w:ind w:hanging="0"/>`)
 	d.Buf.WriteString(`<w:contextualSpacing/>`)
 	d.Buf.WriteString(`</w:pPr>`)
 	d.Buf.WriteString(`</w:p>`)
 }
 
-func (d *Document) writeContentFromInterface(content interface{}) error {
+func (d *Document) writeContentFromInterface(content interface{}, style Style) error {
 	switch content.(type) {
 	case *Paragraph:
 		p, ok := content.(*Paragraph)
 		if !ok {
 			return errors.New("can't convert to Paragraph")
 		}
+
+		p.Style.Color = style.Color
 
 		if err := d.writeP(p); err != nil {
 			return errors.Wrap(err, "Document.writeP")
@@ -814,6 +940,8 @@ func (d *Document) writeContentFromInterface(content interface{}) error {
 		if !ok {
 			return errors.New("can't convert to List")
 		}
+
+		list.Style.Color = style.Color
 
 		var recursionDepth int
 		if err := d.writeList(writeListArgs{
@@ -839,9 +967,9 @@ func (d *Document) writeTr(tr *TR, table *Table, index int) error {
 
 	for _, td := range tr.TD {
 		td.prepareBorders(table.Style.Borders)
-		if index == 0 {
-			td.Style.Borders.Bottom.Width = 8
-		}
+		// if index == 0 {
+		// 	td.Style.Borders.Bottom.Width = 8
+		// }
 
 		if err := d.writeTd(td); err != nil {
 			return err
@@ -953,18 +1081,6 @@ func (t *Table) getType() string {
 	}
 }
 
-func (t *Table) Error() error {
-	if t.getType() == "autofit" {
-		return nil
-	}
-
-	if len(t.TR) > len(t.Grid) {
-		return errors.New("len of TRs more then len of Grid")
-	}
-
-	return nil
-}
-
 func (b *Borders) isEmpty() bool {
 	if !b.Top.isEmpty() {
 		return false
@@ -998,20 +1114,16 @@ func (b *Border) isEmpty() bool {
 }
 
 func (d *Document) SetTable(table *Table) error {
-	if err := table.Error(); err != nil {
-		return err
-	}
-
 	if table.TR == nil {
 		return nil
 	}
 
-	if table.Style.Borders.isEmpty() {
-		table.Style.Borders.Bottom = Border{
-			Width: 4,
-			Color: "C0C0C0",
-		}
-	}
+	// if table.Style.Borders.isEmpty() {
+	// 	table.Style.Borders.Bottom = Border{
+	// 		Width: 4,
+	// 		Color: "C0C0C0",
+	// 	}
+	// }
 
 	if err := d.writeTable(table); err != nil {
 		return errors.Wrap(err, "table.String")
@@ -1039,8 +1151,19 @@ func (img *Image) String(d *Document) (string, error) {
 		return "", errors.Wrap(err, "Image.populateSizes")
 	}
 
-	img.ID = len(d.Images) + 1
-	img.RelsID = ImagesID + strconv.Itoa(img.ID)
+	id := len(d.images.content) + 1
+	relsIdPrefix := ImagesID
+
+	if img.isHeader {
+		id = len(d.images.header) + 1
+		relsIdPrefix = "fileHeaderImageID"
+	} else if img.isFooter {
+		id = len(d.images.footer) + 1
+		relsIdPrefix = "fileFooterImageID"
+	}
+
+	img.ID = id
+	img.RelsID = relsIdPrefix + strconv.Itoa(img.ID)
 	img.ContentType = http.DetectContentType(img.Bytes)
 	img.FileName = filepath.Base(img.FileName)
 	img.Extension = filepath.Ext(img.FileName)
@@ -1090,7 +1213,13 @@ func (img *Image) String(d *Document) (string, error) {
 	buf.WriteString(`</w:drawing>`)
 	buf.WriteString("</w:r>")
 
-	d.Images = append(d.Images, img)
+	if img.isHeader {
+		d.images.header = append(d.images.header, img)
+	} else if img.isFooter {
+		d.images.footer = append(d.images.footer, img)
+	} else {
+		d.images.content = append(d.images.content, img)
+	}
 
 	return buf.String(), nil
 }
@@ -1227,6 +1356,10 @@ func (img *Image) getDisplayTag() string {
 }
 
 func (img *Image) getWrap() string {
+	if img.IsBackground {
+		return "<wp:wrapNone/>"
+	}
+
 	if img.Display == ImageDisplayFloat {
 		return `<wp:wrapSquare wrapText="largest" distT="0" distB="0" distL="0" distR="0" />`
 	}

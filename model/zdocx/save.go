@@ -99,6 +99,16 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 	for _, p := range args.p {
 		p.StyleClass = args.fileName + "Class"
 
+		for _, i := range p.Texts {
+			if i.Image != nil {
+				if args.tag == "hdr" {
+					i.Image.isHeader = true
+				} else {
+					i.Image.isFooter = true
+				}
+			}
+		}
+
 		pString, err := p.String(args.document)
 		if err != nil {
 			return errors.Wrap(err, "Paragraph.String")
@@ -119,12 +129,83 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 		return errors.Wrap(err, "contentFile.Write")
 	}
 
+	if err := writeHeaderOrFooterRels(writeHeaderOrFooterRelsArgs{
+		writer:   args.writer,
+		document: args.document,
+		tag:      args.tag,
+	}); err != nil {
+		return errors.Wrap(err, "writeHeaderOrFooterRels")
+	}
+
+	return nil
+}
+
+type writeHeaderOrFooterRelsArgs struct {
+	writer   *zip.Writer
+	document *Document
+	tag      string
+}
+
+func writeHeaderOrFooterRels(args writeHeaderOrFooterRelsArgs) error {
+	var fileName string
+	var images []*Image
+
+	if args.tag == "hdr" {
+		fileName = "header1"
+		images = args.document.images.header
+	} else if args.tag == "ftr" {
+		fileName = "footer1"
+		images = args.document.images.footer
+	}
+
+	if err := writeHeaderOrFooterRelsFile(writeHeaderOrFooterRelsFileArgs{
+		fileName: fileName,
+		images:   images,
+		writer:   args.writer,
+	}); err != nil {
+		return errors.Wrap(err, "writeHeaderAndFooterRelsFile")
+	}
+
+	return nil
+}
+
+type writeHeaderOrFooterRelsFileArgs struct {
+	fileName string
+	images   []*Image
+	writer   *zip.Writer
+}
+
+func writeHeaderOrFooterRelsFile(args writeHeaderOrFooterRelsFileArgs) error {
+	if len(args.images) == 0 {
+		return nil
+	}
+
+	file, err := args.writer.Create("word/_rels/" + args.fileName + ".xml.rels")
+	if err != nil {
+		return errors.Wrap(err, "writer.Create")
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
+	buf.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
+
+	for _, i := range args.images {
+		buf.WriteString(`<Relationship Id="` + i.RelsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + i.FileName + `"/>`)
+	}
+
+	buf.WriteString(`</Relationships>`)
+
+	_, err = file.Write(buf.Bytes())
+	if err != nil {
+		return errors.Wrap(err, "file.Write")
+	}
+
 	return nil
 }
 
 type writeMediaFilesArgs struct {
-	document *Document
-	writer   *zip.Writer
+	images []*Image
+	writer *zip.Writer
 }
 
 func isContentTypeValid(contentType string) bool {
@@ -144,7 +225,7 @@ func isContentTypeValid(contentType string) bool {
 }
 
 func writeMediaFiles(args writeMediaFilesArgs) error {
-	for _, i := range args.document.Images {
+	for _, i := range args.images {
 		if !isContentTypeValid(i.ContentType) {
 			continue
 		}
@@ -181,7 +262,7 @@ func (args *zipFilesArgs) Error() error {
 	return nil
 }
 
-func (doc *Document) Create() (*bytes.Buffer, error) {
+func (doc *Document) WriteToBuffer() (*bytes.Buffer, error) {
 	b := new(bytes.Buffer)
 	writer := zip.NewWriter(b)
 	defer writer.Close()
@@ -263,8 +344,22 @@ func zipWrite(args zipWriteArgs) error {
 	}
 
 	if err := writeMediaFiles(writeMediaFilesArgs{
-		document: args.document,
-		writer:   args.writer,
+		images: args.document.images.content,
+		writer: args.writer,
+	}); err != nil {
+		return errors.Wrap(err, "writeMediaFiles")
+	}
+
+	if err := writeMediaFiles(writeMediaFilesArgs{
+		images: args.document.images.footer,
+		writer: args.writer,
+	}); err != nil {
+		return errors.Wrap(err, "writeMediaFiles")
+	}
+
+	if err := writeMediaFiles(writeMediaFilesArgs{
+		images: args.document.images.header,
+		writer: args.writer,
 	}); err != nil {
 		return errors.Wrap(err, "writeMediaFiles")
 	}
@@ -371,8 +466,8 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 	buf.WriteString(`<Relationship Id="rId` + SettingsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
 	buf.WriteString(`<Relationship Id="rId` + ThemeID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
 
-	if len(args.document.Images) != 0 {
-		for _, i := range args.document.Images {
+	if len(args.document.images.content) != 0 {
+		for _, i := range args.document.images.content {
 			buf.WriteString(`<Relationship Id="` + i.RelsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + i.FileName + `"/>`)
 		}
 	}
@@ -460,7 +555,15 @@ func writeContentTypesFile(args writeContentTypesFileArgs) error {
 	buf.WriteString(`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>`)
 	buf.WriteString(`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`)
 
-	for _, i := range args.document.Images {
+	for _, i := range args.document.images.content {
+		buf.WriteString(`<Override PartName="/word/media/` + i.FileName + `" ContentType="` + i.ContentType + `"/>`)
+	}
+
+	for _, i := range args.document.images.header {
+		buf.WriteString(`<Override PartName="/word/media/` + i.FileName + `" ContentType="` + i.ContentType + `"/>`)
+	}
+
+	for _, i := range args.document.images.footer {
 		buf.WriteString(`<Override PartName="/word/media/` + i.FileName + `" ContentType="` + i.ContentType + `"/>`)
 	}
 
