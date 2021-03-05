@@ -247,7 +247,7 @@ func (n *Node) xmlPStruct() (*Paragraph, error) {
 	for _, i := range n.Children {
 		p.Texts = append(p.Texts, &Text{
 			Text: i.Text,
-			Style: Style{
+			Style: TextStyle{
 				IsBold:   i.Tag == "b",
 				IsItalic: i.Tag == "i",
 			},

@@ -9,6 +9,17 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	mainPageFooter         = "mainPageFooter"
+	mainPageHeader         = "mainPageHeader"
+	defaultFooter          = "defaultFooter"
+	defaultHeader          = "defaultHeader"
+	mainPageHeaderFileName = "header2"
+	mainPageFooterFileName = "footer2"
+	defaultHeaderFileName  = "header1"
+	defaultFooterFileName  = "footer1"
+)
+
 type writeContentFileArgs struct {
 	document *Document
 	writer   *zip.Writer
@@ -36,25 +47,53 @@ type writeHeaderAndFooterFileArgs struct {
 }
 
 func writeHeaderAndFooterFile(args writeHeaderAndFooterFileArgs) error {
-	if len(args.document.Header) > 0 {
+	if args.document.Header != nil {
 		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
-			document: args.document,
-			p:        args.document.Header,
-			writer:   args.writer,
-			tag:      "hdr",
-			fileName: "header",
+			document:    args.document,
+			p:           args.document.Header,
+			writer:      args.writer,
+			tag:         "hdr",
+			fileName:    defaultHeaderFileName,
+			sectionType: defaultHeader,
 		}); err != nil {
 			return errors.Wrap(err, "writeHeaderOrFooter")
 		}
 	}
 
-	if len(args.document.Footer) > 0 {
+	if args.document.Footer != nil {
 		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
-			document: args.document,
-			p:        args.document.Footer,
-			writer:   args.writer,
-			tag:      "ftr",
-			fileName: "footer",
+			document:    args.document,
+			p:           args.document.Footer,
+			writer:      args.writer,
+			tag:         "ftr",
+			fileName:    defaultFooterFileName,
+			sectionType: defaultFooter,
+		}); err != nil {
+			return errors.Wrap(err, "writeHeaderOrFooter")
+		}
+	}
+
+	if args.document.MainPageFooter != nil {
+		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
+			document:    args.document,
+			p:           args.document.MainPageFooter,
+			writer:      args.writer,
+			tag:         "ftr",
+			fileName:    mainPageFooterFileName,
+			sectionType: mainPageFooter,
+		}); err != nil {
+			return errors.Wrap(err, "writeHeaderOrFooter")
+		}
+	}
+
+	if args.document.MainPageHeader != nil {
+		if err := writeHeaderOrFooter(writeHeaderOrFooterArgs{
+			document:    args.document,
+			p:           args.document.MainPageHeader,
+			writer:      args.writer,
+			tag:         "hdr",
+			fileName:    mainPageHeaderFileName,
+			sectionType: mainPageHeader,
 		}); err != nil {
 			return errors.Wrap(err, "writeHeaderOrFooter")
 		}
@@ -64,14 +103,19 @@ func writeHeaderAndFooterFile(args writeHeaderAndFooterFileArgs) error {
 }
 
 type writeHeaderOrFooterArgs struct {
-	document *Document
-	p        []*Paragraph
-	writer   *zip.Writer
-	tag      string
-	fileName string
+	document    *Document
+	p           []*Paragraph
+	writer      *zip.Writer
+	tag         string
+	fileName    string
+	sectionType string
 }
 
 func (args *writeHeaderOrFooterArgs) Error() error {
+	if args.sectionType == "" {
+		return errors.New("no args.sectionType")
+	}
+
 	if args.tag == "" {
 		return errors.New("no args.Tag")
 	}
@@ -96,30 +140,91 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 
 	buf.WriteString(getDocumentStartTags(args.tag))
 
-	for _, p := range args.p {
-		p.StyleClass = args.fileName + "Class"
+	content := []interface{}{}
 
+	for _, p := range args.p {
 		for _, i := range p.Texts {
 			if i.Image != nil {
-				if args.tag == "hdr" {
+				switch args.sectionType {
+				case mainPageHeader:
+					i.Image.isMainPageHeader = true
+				case mainPageFooter:
+					i.Image.isMainPageFooter = true
+				case defaultHeader:
 					i.Image.isHeader = true
-				} else {
+				case defaultFooter:
 					i.Image.isFooter = true
 				}
 			}
 		}
 
-		pString, err := p.String(args.document)
-		if err != nil {
-			return errors.Wrap(err, "Paragraph.String")
+		p.Style.Margins = Margins{
+			Top:    &Margin{Value: 0},
+			Bottom: &Margin{Value: 0},
 		}
 
-		buf.WriteString(pString)
+		if args.sectionType == defaultFooter {
+			content = append(content, p)
+		} else {
+			pString, err := p.string(args.document)
+			if err != nil {
+				return errors.Wrap(err, "p.Bytes")
+			}
+
+			buf.WriteString(pString)
+		}
+	}
+
+	if args.sectionType == defaultFooter {
+		pagination := Paragraph{
+			isPagination: true,
+		}
+
+		style := TDStyle{
+			Margins: Margins{
+				Top:    &Margin{Value: 0},
+				Left:   &Margin{Value: 0},
+				Bottom: &Margin{Value: 0},
+				Right:  &Margin{Value: 0},
+			},
+		}
+
+		documentWidth := args.document.GetInnerWidth()
+		table := Table{
+			Type: "fixed",
+			Grid: []int{
+				int(float32(documentWidth) * 0.5),
+				int(float32(documentWidth) * 0.5),
+			},
+			TR: []*TR{
+				{
+					TD: []*TD{
+						{
+							Style:   style,
+							Content: content,
+						},
+						{
+							Style: style,
+							Content: []interface{}{
+								&pagination,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		tableString, err := table.string(args.document)
+		if err != nil {
+			return errors.Wrap(err, "table.bytes")
+		}
+
+		buf.WriteString(tableString)
 	}
 
 	buf.WriteString("</w:" + args.tag + ">")
 
-	contentFile, err := args.writer.Create("word/" + args.fileName + "1.xml")
+	contentFile, err := args.writer.Create("word/" + args.fileName + ".xml")
 	if err != nil {
 		return errors.Wrap(err, "writer.Create")
 	}
@@ -130,9 +235,10 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 	}
 
 	if err := writeHeaderOrFooterRels(writeHeaderOrFooterRelsArgs{
-		writer:   args.writer,
-		document: args.document,
-		tag:      args.tag,
+		writer:      args.writer,
+		document:    args.document,
+		sectionType: args.sectionType,
+		fileName:    args.fileName,
 	}); err != nil {
 		return errors.Wrap(err, "writeHeaderOrFooterRels")
 	}
@@ -141,25 +247,52 @@ func writeHeaderOrFooter(args writeHeaderOrFooterArgs) error {
 }
 
 type writeHeaderOrFooterRelsArgs struct {
-	writer   *zip.Writer
-	document *Document
-	tag      string
+	writer      *zip.Writer
+	document    *Document
+	fileName    string
+	sectionType string
+}
+
+func (args *writeHeaderOrFooterRelsArgs) error() error {
+	if args.sectionType == "" {
+		return errors.New("no args.sectionType")
+	}
+
+	if args.fileName == "" {
+		return errors.New("no args.fileName")
+	}
+
+	if args.document == nil {
+		return errors.New("no args.document")
+	}
+
+	if args.writer == nil {
+		return errors.New("no args.writer")
+	}
+
+	return nil
 }
 
 func writeHeaderOrFooterRels(args writeHeaderOrFooterRelsArgs) error {
-	var fileName string
+	if err := args.error(); err != nil {
+		return err
+	}
+
 	var images []*Image
 
-	if args.tag == "hdr" {
-		fileName = "header1"
+	switch args.sectionType {
+	case mainPageHeader:
+		images = args.document.images.mainPageHeader
+	case mainPageFooter:
+		images = args.document.images.mainPageFooter
+	case defaultHeader:
 		images = args.document.images.header
-	} else if args.tag == "ftr" {
-		fileName = "footer1"
+	case defaultFooter:
 		images = args.document.images.footer
 	}
 
 	if err := writeHeaderOrFooterRelsFile(writeHeaderOrFooterRelsFileArgs{
-		fileName: fileName,
+		fileName: args.fileName,
 		images:   images,
 		writer:   args.writer,
 	}); err != nil {
@@ -460,11 +593,11 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 	var buf bytes.Buffer
 	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
 	buf.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
-	buf.WriteString(`<Relationship Id="rId` + StylesID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + NumberingID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + FontTableID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + SettingsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
-	buf.WriteString(`<Relationship Id="rId` + ThemeID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + stylesID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + numberingID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + fontTableID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + settingsID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
+	buf.WriteString(`<Relationship Id="rId` + themeID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
 
 	if len(args.document.images.content) != 0 {
 		for _, i := range args.document.images.content {
@@ -472,12 +605,20 @@ func writeWordRelsFile(args writeWordRelsFileArgs) error {
 		}
 	}
 
-	if len(args.document.Header) > 0 {
-		buf.WriteString(`<Relationship Id="rId` + HeaderID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
+	if args.document.Header != nil {
+		buf.WriteString(`<Relationship Id="rId` + defaultHeaderID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="` + defaultHeaderFileName + `.xml"/>`)
 	}
 
-	if len(args.document.Footer) > 0 {
-		buf.WriteString(`<Relationship Id="rId` + FooterID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
+	if args.document.Footer != nil {
+		buf.WriteString(`<Relationship Id="rId` + defaultFooterID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="` + defaultFooterFileName + `.xml"/>`)
+	}
+
+	if args.document.MainPageHeader != nil {
+		buf.WriteString(`<Relationship Id="rId` + mainPageHeaderID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="` + defaultFooterFileName + `.xml"/>`)
+	}
+
+	if args.document.MainPageFooter != nil {
+		buf.WriteString(`<Relationship Id="rId` + mainPageFooterID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="` + mainPageFooterFileName + `.xml"/>`)
 	}
 
 	for _, i := range args.document.Links {
@@ -567,12 +708,20 @@ func writeContentTypesFile(args writeContentTypesFileArgs) error {
 		buf.WriteString(`<Override PartName="/word/media/` + i.FileName + `" ContentType="` + i.ContentType + `"/>`)
 	}
 
-	if len(args.document.Footer) > 0 {
-		buf.WriteString(`<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`)
+	if args.document.Footer != nil {
+		buf.WriteString(`<Override PartName="/word/` + defaultFooterFileName + `.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`)
 	}
 
-	if len(args.document.Header) > 0 {
-		buf.WriteString(`<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`)
+	if args.document.MainPageFooter != nil {
+		buf.WriteString(`<Override PartName="/word/` + mainPageFooterFileName + `.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`)
+	}
+
+	if args.document.Header != nil {
+		buf.WriteString(`<Override PartName="/word/` + defaultHeaderFileName + `.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`)
+	}
+
+	if args.document.MainPageHeader != nil {
+		buf.WriteString(`<Override PartName="/word/` + mainPageHeaderFileName + `.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`)
 	}
 
 	buf.WriteString(`<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>`)
@@ -682,37 +831,3 @@ func templatesFilesList() []*templateFile {
 		},
 	}
 }
-
-// func addTemplateFileToZip(zipWriter *zip.Writer, fileData *templateFile) error {
-// 	file, err := os.Open(fileData. + "/" + fileData.Name)
-// 	if err != nil {
-// 		return errors.Wrap(err, "os.Opern")
-// 	}
-
-// 	defer file.Close()
-
-// 	info, err := file.Stat()
-// 	if err != nil {
-// 		return errors.Wrap(err, "file.Stat")
-// 	}
-
-// 	header, err := zip.FileInfoHeader(info)
-// 	if err != nil {
-// 		return errors.Wrap(err, "zip.FileInfoHeader")
-// 	}
-
-// 	header.Name = fileData.FullName()
-// 	header.Method = zip.Deflate
-
-// 	writer, err := zipWriter.CreateHeader(header)
-// 	if err != nil {
-// 		return errors.Wrap(err, "zipWriter.CreateHeader")
-// 	}
-
-// 	_, err = io.Copy(writer, file)
-// 	if err != nil {
-// 		return errors.Wrap(err, "io.Copy")
-// 	}
-
-// 	return nil
-// }
